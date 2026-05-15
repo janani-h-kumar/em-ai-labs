@@ -1,0 +1,14 @@
+# --- Core AI Integration ---
+# Official library for accessing GPT-4, DALL-E, and Embeddings
+openai
+
+# --- Networking & API Communication ---
+# Used to make HTTP requests to external services not covered by SDKs
+requests
+
+# --- Configuration & Data Handling ---
+# Used for parsing .yaml config files (cleaner alternative to JSON)
+PyYAML
+
+# Manages environment variables from .env for local/on-prem secrets
+python-dotenv==1.0.1  

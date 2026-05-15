@@ -1,0 +1,22 @@
+# Ollama Configuration
+ollama:
+  base_url: "http://localhost:11434/v1"
+  api_key: "ollama"
+  # model: "llama3"  # Optional: will auto-select running model if not specified
+
+# Weather API Configuration
+weather:
+  base_url: "https://api.openweathermap.org/data/2.5"
+  api_key: "YOUR_OPENWEATHERMAP_API_KEY"  # Get from https://openweathermap.org/api
+
+# Chat Settings
+chat:
+  max_history: 50
+  timeout: 30
+  system_prompt: null
+
+# Persistence
+persistence:
+  enabled: false
+  type: "memory"  # "memory" or "sqlite"
+  db_path: "./chat_history.db"
