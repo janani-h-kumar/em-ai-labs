@@ -8,7 +8,8 @@ __pycache__/
 
 # Configuration with sensitive data
 config.yaml
-*.env
+.env
+*.env.*
 .env.local
 
 # IDE

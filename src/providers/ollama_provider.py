@@ -45,13 +45,14 @@ class OllamaClient:
             ModelNotFoundError: If specified model is not available locally
         """
         self.config = config_manager
-        self.base_url = config_manager.get("ollama.base_url")
-        self.api_key = config_manager.get("ollama.api_key")
-        self.model = config_manager.get("ollama.model")
+        self.host = config_manager.get("env.ollama_base_url")
+        self.base_url = self._build_base_url(self.host)
+        self.api_key = config_manager.get_required("env.ollama_api_key")
+        self.model = config_manager.get("env.ollama_model")  # Optional, can auto-select if not set
 
         if not self.base_url or not self.api_key:
             raise OllamaConfigError(
-                "Ollama base_url and api_key must be configured."
+                "Ollama configuration is incomplete. Set OLLAMA_HOST and OLLAMA_API_KEY in configs/.env (or configs/.env.dev when APP_ENV=dev)."
             )
 
         # Validate connection and model availability
@@ -179,6 +180,24 @@ class OllamaClient:
             pass  # Ignore errors, will return None
             
         return None
+
+    def _build_base_url(self, host: Optional[str]) -> Optional[str]:
+        """
+        Build a valid Ollama base URL from a host string.
+
+        Args:
+            host: Ollama host (e.g. http://localhost:11434)
+
+        Returns:
+            str: Ollama API base URL (e.g. http://localhost:11434/v1)
+        """
+        if not host:
+            return None
+
+        host = host.rstrip('/')
+        if host.endswith('/v1'):
+            return host
+        return f"{host}/v1"
 
     def chat_completion(self, content: Union[str, Dict, List[Dict]]) -> str:
         """

@@ -89,7 +89,7 @@ class BaseAgent(ABC):
         Get configuration value using dot notation
 
         Args:
-            key: Configuration key (e.g., 'ollama.base_url')
+            key: Configuration key (e.g., 'ollama.host')
             default: Default value if key not found
 
         Returns:

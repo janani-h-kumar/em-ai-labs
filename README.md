@@ -16,6 +16,9 @@ Production-grade Python application for interacting with local Ollama models wit
 
 ## Setup
 
+### Migration note
+Sensitive values have moved out of `config.yaml` and into `configs/.env`. Set `OLLAMA_HOST`, `OLLAMA_API_KEY`, and `WEATHER_API_KEY` in `configs/.env` and do not commit that file.
+
 ### Prerequisites
 - Python 3.8+
 - Ollama running locally (`http://localhost:11434`)
@@ -43,26 +46,28 @@ Production-grade Python application for interacting with local Ollama models wit
    cd configs
    cp config.yaml.example config.yaml
    ```
-   
-   Edit `config.yaml` if your setup differs:
-   ```yaml
-   # Ollama Configuration
-   ollama:
-     base_url: "http://localhost:11434/v1"
-     api_key: "ollama"
-     # model: "llama3"  # Optional: auto-selects running model if not specified
+
+   Create a `configs/.env` file with the required sensitive settings:
+   ```bash
+   cd configs
+   copy NUL .env
    ```
+
+   Add the following values to `configs/.env`:
+   ```text
+   OLLAMA_HOST=http://localhost:11434
+   OLLAMA_API_KEY=your_ollama_api_key
+   WEATHER_API_KEY=your_openweathermap_api_key
+   ```
+
+   Edit `config.yaml` if your setup differs. `config.yaml` should not contain OLLAMA_HOST, OLLAMA_API_KEY, or WEATHER_API_KEY.
 
 5. **Configure Weather API** (Optional - only needed for WeatherAgent)
    
-   If you want to use the WeatherAgent, get a free API key from [OpenWeatherMap](https://openweathermap.org/api):
-   
-   ```yaml
-   # In config.yaml
-   weather:
-     base_url: "https://api.openweathermap.org/data/2.5"
-     api_key: "YOUR_OPENWEATHERMAP_API_KEY"
-   ```
+   If you want to use the WeatherAgent, get a free API key from [OpenWeatherMap](https://openweathermap.org/api).
+   The sensitive keys must be set in `configs/.env`:
+   - `OLLAMA_API_KEY` for Ollama
+   - `WEATHER_API_KEY` for OpenWeatherMap
 
 ## Usage
 
@@ -174,8 +179,8 @@ Loads and validates configuration from YAML file with dot-notation access.
 from src.providers.ollama_provider import ConfigManager
 
 config_manager = ConfigManager("configs/config.yaml")
-base_url = config_manager.get("ollama.base_url")
-api_key = config_manager.get("weather.api_key")
+host = config_manager.get("ollama.host")
+api_key = config_manager.get("env.weather_api_key")  # loaded from configs/.env via WEATHER_API_KEY
 ```
 
 #### OllamaClient

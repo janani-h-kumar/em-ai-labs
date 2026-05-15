@@ -4,8 +4,7 @@ import logging
 from pathlib import Path
 from typing import Dict, Any, Optional, Union, List
 from dataclasses import dataclass
-from dotenv import load_dotenv
-
+from dotenv import dotenv_values, load_dotenv
 
 logger = logging.getLogger(__name__)
 
@@ -27,9 +26,9 @@ class ConfigManager:
 
     Features:
     - YAML configuration loading
-    - Dot notation access (e.g., 'ollama.base_url')
+    - Dot notation access (e.g., 'ollama.host')
     - Configuration validation
-    - Environment variable support
+    - Environment variable support for sensitive values via .env
     - Comprehensive error handling
     """
 
@@ -49,6 +48,7 @@ class ConfigManager:
         Raises:
             ConfigError: If loading fails
         """
+
         config_file = Path(self.config_path)
         logger.info(f"Loading configuration from: {self.config_path}")
 
@@ -72,49 +72,47 @@ class ConfigManager:
                 f"Configuration file not found: {self.config_path}. Falling back to environment variables."
             )
 
-        dotenv_path = config_file.parent / '.env'
-        load_dotenv(dotenv_path=dotenv_path, override=False)
+        # TODO - looks round about.. revisit 
+        base_env_path = Path(__file__).resolve().parent.parent / '.env'
+        load_dotenv(dotenv_path=base_env_path)
+        
+        # Determine Environment (The ONLY place where a default is acceptable)
+        app_env = os.getenv("APP_ENV").lower()
 
-        app_env = (os.getenv('APP_ENV') or os.getenv('APP_ENVIRONMENT') or '').strip().lower()
-        if app_env:
-            env_candidates = [f'.env.{app_env}']
-            if app_env in {'dev', 'development'}:
-                env_candidates.extend(['.env.dev', '.env.development'])
-            elif app_env in {'prod', 'production'}:
-                env_candidates.extend(['.env.prod', '.env.production'])
+        # 3. SECRETS: Load the environment-specific file
+        env_file = Path(__file__).resolve().parent.parent / f".env.{app_env}"
+        
+        # We use dotenv_values to get ONLY the keys from the file 
+        # avoiding hardcoded prefixes or system "noise" (like PATH)
+        if env_file.exists():
+            secrets = dotenv_values(env_file)
+            config["env"] = {k.lower(): v for k, v in secrets.items()}
+            
+            # Also load them into os.environ so other libs (like Ollama) can see them
+            load_dotenv(env_file, override=True)
+        else:
+            config["env"] = {}
 
-            for candidate in env_candidates:
-                env_path = config_file.parent / candidate
-                if env_path.exists():
-                    load_dotenv(dotenv_path=env_path, override=False)
-                    logger.info(f"Loaded environment overrides from: {env_path}")
-                    break
 
-        self._apply_env_overrides(config)
+        # TODO old implementation - needs to be refactored to use the new env loading logic above
+        # app_env = (os.getenv('APP_ENV') or os.getenv('APP_ENVIRONMENT') or '').strip().lower()
+        # if app_env:
+        #     env_candidates = [f'.env.{app_env}']
+        #     if app_env in {'dev', 'development'}:
+        #         env_candidates.extend(['.env.dev', '.env.development'])
+        #     elif app_env in {'prod', 'production'}:
+        #         env_candidates.extend(['.env.prod', '.env.production'])
+
+        #     for candidate in env_candidates:
+        #         env_path = config_file.parent / candidate
+        #         if env_path.exists():
+        #             load_dotenv(dotenv_path=env_path, override=False)
+        #             logger.info(f"Loaded environment overrides from: {env_path}")
+        #             break
+
         logger.info("Configuration loaded successfully")
         return config
 
-    def _apply_env_overrides(self, config: Dict[str, Any]) -> None:
-        """
-        Override configuration values from environment variables.
-
-        Supported naming convention:
-            SECTION_KEY=value -> config['section']['key']
-        Example:
-            OLLAMA_BASE_URL -> config['ollama']['base_url']
-            WEATHER_API_KEY -> config['weather']['api_key']
-        """
-        allowed_sections = set(config.keys()) | {"ollama", "weather", "chat", "persistence"}
-
-        for env_key, env_value in os.environ.items():
-            if env_key in {"APP_ENV", "APP_ENVIRONMENT"}:
-                continue
-
-            parts = env_key.lower().split("_")
-            if len(parts) < 2 or parts[0] not in allowed_sections:
-                continue
-
-            self._set_in_dict(config, parts, env_value)
 
     def _set_in_dict(self, config: Dict[str, Any], keys: List[str], value: Any) -> None:
         """Set a nested configuration value in a dictionary."""
@@ -130,7 +128,7 @@ class ConfigManager:
         Get configuration value using dot notation
 
         Args:
-            key: Configuration key (e.g., 'ollama.base_url')
+            key: Configuration key (e.g., 'ollama.host')
             default: Default value if key not found
 
         Returns:
@@ -164,7 +162,15 @@ class ConfigManager:
         """
         value = self.get(key)
         if value is None:
-            raise ConfigValidationError(f"Required configuration key not found: {key}")
+            hints = {
+                "weather.api_key": "Set WEATHER_API_KEY in configs/.env or your environment.",
+                "ollama.host": "Set OLLAMA_HOST in configs/.env or your environment.",
+                "ollama.api_key": "Set OLLAMA_API_KEY in configs/.env or your environment.",
+            }
+            message = f"Required configuration key not found: {key}"
+            if key in hints:
+                message += f" ({hints[key]})"
+            raise ConfigValidationError(message)
         return value
 
     def validate_required_keys(self, required_keys: list) -> None:

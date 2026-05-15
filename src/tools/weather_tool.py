@@ -44,12 +44,12 @@ class WeatherClient:
             WeatherAPIError: If unable to connect to weather API
         """
         self.config = config_manager
-        self.api_key = config_manager.get("weather.api_key")
-        self.base_url = config_manager.get("weather.base_url")
+        self.api_key = config_manager.get_required("env.openweather_api_key")
+        self.base_url = config_manager.get("env.openweather_base_url")
 
-        if not self.api_key or not self.base_url:
+        if not self.base_url:
             raise WeatherConfigError(
-                "Weather API key and base URL must be configured"
+                "Weather API base URL must be configured in config.yaml."
             )
 
         # Validate connection to API

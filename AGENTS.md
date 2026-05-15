@@ -69,13 +69,12 @@ class SomeAgent:
 **Configuration**:
 ```yaml
 # config.yaml
+# Sensitive values are stored in configs/.env only.
 weather:
   base_url: "https://api.openweathermap.org/data/2.5"
-  api_key: "YOUR_API_KEY"
 
 ollama:
-  base_url: "http://localhost:11434/v1"
-  api_key: "ollama"
+  # ollama.api_key is loaded from configs/.env via OLLAMA_API_KEY
 ```
 
 **Usage**:
