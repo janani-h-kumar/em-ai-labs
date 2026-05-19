@@ -85,6 +85,19 @@ ai-lab/
 
 ---
 
+## Dependency & API Compatibility (Long-Term Prevention)
+- Pin runtime-critical libraries in `requirements.txt` for every runtime integration.
+- Verify actual package exports before editing code, for example:
+  - `python -c "import langchain.agents as a; print(dir(a))"`
+  - `python -c "from langchain.agents import create_agent; import inspect; print(inspect.signature(create_agent))"`
+- Avoid stale API names such as `AgentExecutor` or `create_openai_tools_agent` unless the pinned LangChain version explicitly supports them.
+- When upgrading packages, update the runtime code and plan documentation together.
+- Always run minimal validation after changes:
+  - `python -m py_compile src/main.py src/runtimes/langchain_runtime.py`
+  - `python -c "from src.main import AgentManager"`
+
+---
+
 ## Phase 1: Interactive Chat Implementation Steps
 
 ### Step 1: Update requirements.txt ✅

@@ -1,14 +1,52 @@
-# --- Core AI Integration ---
-# Official library for accessing GPT-4, DALL-E, and Embeddings
-openai
+# =========================
+# Core HTTP + Configuration
+# =========================
 
-# --- Networking & API Communication ---
-# Used to make HTTP requests to external services not covered by SDKs
-requests
+requests==2.34.2
+# HTTP calls to OpenWeather and external APIs
 
-# --- Configuration & Data Handling ---
-# Used for parsing .yaml config files (cleaner alternative to JSON)
-PyYAML
+PyYAML==6.0.2
+# Load config.yaml
 
-# Manages environment variables from .env for local/on-prem secrets
-python-dotenv==1.0.1  
+python-dotenv==1.0.1
+# Load API keys from .env
+
+
+# =========================
+# OpenAI SDK
+# =========================
+
+openai==1.82.0
+# Direct OpenAI usage for custom runtime/orchestration
+
+
+# =========================
+# LangChain Stack
+# =========================
+
+langchain==1.3.1
+langchain-community==0.4.1
+# Core LangChain framework and community connectors:
+# agents, tools, prompts, orchestration, Ollama support
+
+# langchain-openai==0.3.19
+# OpenAI integration for LangChain (ChatOpenAI)
+
+langchain-ollama==1.1.0
+# Ollama integration for LangChain (Ollama LLM wrapper)
+
+# =========================
+# Optional Utilities
+# =========================
+
+tiktoken>=0.4.0
+# Token counting/debugging - Phase 1C for token optimization
+
+cachetools>=5.3.0
+# Caching utilities - Phase 1C for response caching
+
+duckduckgo-search>=3.8.5
+# Free web search (no API key required) - Phase 1A for web search tool
+
+# langsmith==0.3.42
+# LangChain tracing + observability/debugging - optional for Phase 1C

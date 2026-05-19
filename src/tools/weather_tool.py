@@ -44,8 +44,8 @@ class WeatherClient:
             WeatherAPIError: If unable to connect to weather API
         """
         self.config = config_manager
-        self.api_key = config_manager.get_required("env.openweather_api_key")
-        self.base_url = config_manager.get("env.openweather_base_url")
+        self.api_key = config_manager.get_required("env.OPENWEATHER_API_KEY")
+        self.base_url = config_manager.get("env.OPENWEATHER_BASE_URL")
 
         if not self.base_url:
             raise WeatherConfigError(

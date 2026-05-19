@@ -45,10 +45,10 @@ class OllamaClient:
             ModelNotFoundError: If specified model is not available locally
         """
         self.config = config_manager
-        self.host = config_manager.get("env.ollama_base_url")
+        self.host = config_manager.get("env.OLLAMA_BASE_URL")
         self.base_url = self._build_base_url(self.host)
-        self.api_key = config_manager.get_required("env.ollama_api_key")
-        self.model = config_manager.get("env.ollama_model")  # Optional, can auto-select if not set
+        self.api_key = config_manager.get_required("env.OLLAMA_API_KEY")
+        self.model = config_manager.get("env.OLLAMA_MODEL")  # Optional, can auto-select if not set
 
         if not self.base_url or not self.api_key:
             raise OllamaConfigError(
