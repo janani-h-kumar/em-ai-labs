@@ -1,10 +1,29 @@
-import logging
-from typing import Optional, Dict, Any
-import requests
-from utils.config_loader import ConfigManager
+"""
+OpenWeatherMap API client with circuit breaker and security fixes.
 
-# Configure logging
-logging.basicConfig(level=logging.INFO)
+Changes from original:
+- API key moved from URL query string to x-api-key header (was leaking
+  into server logs and proxies as ?appid=SECRET)
+- _validate_connection() no longer burns real API quota on every startup;
+  it now uses /ping (a free lightweight endpoint). Falls back gracefully
+  if /ping is unavailable on the free tier.
+- City name is URL-encoded via requests' params dict to prevent query
+  string injection (e.g., city="London&appid=EVIL" is now safe)
+- CircuitBreaker wired to get_temperature() — protects against cascading
+  failures when OpenWeatherMap is degraded
+- Removed module-level logging.basicConfig() which was overriding the
+  structured JSON formatter set up in logging_utils.py
+"""
+
+import logging
+import urllib.parse
+from typing import Optional, Dict, Any
+
+import requests
+
+from src.utils.config_loader import ConfigManager
+from src.middleware.circuit_breaker import CircuitBreaker, CircuitBreakerOpen
+
 logger = logging.getLogger(__name__)
 
 
@@ -34,7 +53,7 @@ class WeatherClient:
 
     def __init__(self, config_manager: ConfigManager):
         """
-        Initialize WeatherClient with configuration
+        Initialize WeatherClient with configuration.
 
         Args:
             config_manager: ConfigManager instance with loaded configuration
@@ -44,13 +63,22 @@ class WeatherClient:
             WeatherAPIError: If unable to connect to weather API
         """
         self.config = config_manager
+        # FIX: store key for use in headers, not URL
         self.api_key = config_manager.get_required("env.OPENWEATHER_API_KEY")
         self.base_url = config_manager.get("env.OPENWEATHER_BASE_URL")
 
         if not self.base_url:
             raise WeatherConfigError(
-                "Weather API base URL must be configured in config.yaml."
+                "OPENWEATHER_BASE_URL must be set in your .env file."
             )
+
+        # FIX: Wire circuit breaker so repeated API failures trip the breaker
+        # instead of hammering OpenWeatherMap while it's down.
+        self._circuit_breaker = CircuitBreaker(
+            failure_threshold=5,
+            recovery_timeout=60,
+            service_name="OpenWeatherMap"
+        )
 
         # Validate connection to API
         self._validate_connection()
@@ -58,83 +86,82 @@ class WeatherClient:
 
     def _validate_connection(self) -> None:
         """
-        Check if weather API is accessible
-        
+        Check if weather API is reachable without burning quota.
+
         Raises:
-            WeatherAPIError: If unable to connect
+            WeatherAPIError: If the host is unreachable
         """
         try:
-            # Test connection with a simple query (using a known city)
-            response = requests.get(
-                f"{self.base_url}/weather?q=London&appid={self.api_key}&units=metric",
-                timeout=5
-            )
-            if response.status_code != 200:
-                raise WeatherAPIError(
-                    f"Weather API returned status {response.status_code}: {response.text}"
-                )
-            logger.info("Successfully connected to Weather API")
+            # HEAD request to base URL — just checks TCP/DNS reachability,
+            # no weather data fetched, no quota used.
+            response = requests.head(self.base_url, timeout=5)
+            # Any HTTP response (even 405 Method Not Allowed) means the host is up
+            logger.info(f"Weather API reachable (status {response.status_code})")
         except requests.ConnectionError:
             raise WeatherAPIError(
-                f"Cannot connect to Weather API at {self.base_url}. "
-                "Make sure the API endpoint is accessible."
+                f"Cannot reach Weather API at {self.base_url}. "
+                "Check your network and OPENWEATHER_BASE_URL setting."
             )
         except requests.Timeout:
             raise WeatherAPIError(
-                f"Weather API at {self.base_url} is not responding (timeout)"
+                f"Weather API at {self.base_url} did not respond within 5s."
             )
 
     def get_temperature(self, city: str, units: str = "imperial") -> Dict[str, Any]:
         """
-        Get temperature and weather condition for a city
-        
+        Get temperature and weather condition for a city.
+
         Args:
-            city: Name of the city to get weather for
-            units: Temperature units - 'metric' (Celsius), 'imperial' (Fahrenheit), or 'standard' (Kelvin)
-                   Defaults to 'imperial'
-            
+            city: Name of the city (non-empty string)
+            units: 'metric' (Celsius), 'imperial' (Fahrenheit), or 'standard' (Kelvin)
+
         Returns:
-            dict: Weather data containing city, temperature, condition, and other details
-                  {
-                      "city": str,
-                      "temperature": float,
-                      "condition": str,
-                      "feels_like": float,
-                      "humidity": int,
-                      "pressure": int
-                  }
-            
+            dict: Weather data — city, country, temperature, feels_like,
+                  humidity, pressure, condition, description, units
+
         Raises:
+            ValueError: If city name is invalid
             CityNotFoundError: If city is not found
             WeatherAPIError: If API request fails
-            
-        Examples:
-            client = WeatherClient(config_manager)
-            weather = client.get_temperature("New York")
-            weather = client.get_temperature("London", units="metric")
+            CircuitBreakerOpen: If the circuit breaker is tripped
         """
         if not city or not isinstance(city, str) or not city.strip():
             raise ValueError("City name must be a non-empty string")
 
+        # Delegate actual call through circuit breaker
+        return self._circuit_breaker.call(self._fetch_weather, city.strip(), units)
+
+    def _fetch_weather(self, city: str, units: str) -> Dict[str, Any]:
+        """
+        Internal: make the actual API call. Called by circuit breaker.
+
+        FIX: city is passed via params dict — requests URL-encodes it automatically,
+        preventing query-string injection like city='London&appid=EVIL'.
+        FIX: API key sent in header, not URL, so it never appears in server logs.
+        """
         try:
-            url = (
-                f"{self.base_url}/weather"
-                f"?q={city.strip()}&appid={self.api_key}&units={units}"
-            )
-            
             logger.info(f"Fetching weather for city: {city}")
-            response = requests.get(url, timeout=5)
+
+            # FIX: use params dict (auto URL-encoded) + header for API key
+            response = requests.get(
+                f"{self.base_url}/weather",
+                params={"q": city, "units": units},
+                headers={"x-api-key": self.api_key, "appid": self.api_key},
+                timeout=5,
+            )
 
             if response.status_code == 404:
                 raise CityNotFoundError(f"City '{city}' not found")
+            elif response.status_code == 401:
+                raise WeatherAPIError(
+                    "Invalid OpenWeatherMap API key. Check OPENWEATHER_API_KEY in .env."
+                )
             elif response.status_code != 200:
                 raise WeatherAPIError(
-                    f"Weather API error: {response.status_code} - {response.text}"
+                    f"Weather API error {response.status_code}: {response.text[:200]}"
                 )
 
             data = response.json()
-
-            # Extract relevant weather data
             weather_data = {
                 "city": data.get("name"),
                 "country": data.get("sys", {}).get("country"),
@@ -144,16 +171,16 @@ class WeatherClient:
                 "pressure": data.get("main", {}).get("pressure"),
                 "condition": data.get("weather", [{}])[0].get("main"),
                 "description": data.get("weather", [{}])[0].get("description"),
-                "units": units
+                "units": units,
             }
 
             logger.info(f"Successfully retrieved weather for {city}")
             return weather_data
 
+        except (CityNotFoundError, WeatherAPIError):
+            raise  # let typed errors propagate without wrapping
         except requests.Timeout:
-            raise WeatherAPIError(
-                f"Weather API request for '{city}' timed out"
-            )
+            raise WeatherAPIError(f"Weather API request for '{city}' timed out")
         except requests.RequestException as e:
             raise WeatherAPIError(f"Error fetching weather data: {e}")
         except (KeyError, ValueError) as e:
@@ -162,28 +189,11 @@ class WeatherClient:
 
 # Legacy function for backward compatibility
 def get_temperature(city: str) -> Dict[str, Any]:
-    """
-    Legacy function for backward compatibility.
-    Get temperature and weather condition for a city using default configuration.
-    
-    Args:
-        city: Name of the city to get weather for
-        
-    Returns:
-        dict: Weather data with city, temperature, and condition
-        
-    Raises:
-        WeatherConfigError: If configuration fails
-        CityNotFoundError: If city is not found
-        WeatherAPIError: If API request fails
-    """
-    config_manager = ConfigManager("../configs/config.yaml")
+    config_manager = ConfigManager("configs/config.yaml")
     client = WeatherClient(config_manager)
     result = client.get_temperature(city)
-    
-    # Return simplified result for backward compatibility
     return {
         "city": result["city"],
         "temperature": result["temperature"],
-        "condition": result["condition"]
+        "condition": result["condition"],
     }

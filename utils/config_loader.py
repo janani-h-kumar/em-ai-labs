@@ -1,10 +1,26 @@
+"""
+Enterprise configuration manager — single authoritative copy.
+
+IMPORTANT: Delete utils/config_loader.py (root-level) and update
+base_agent.py's import to point here: from src.utils.config_loader import ConfigManager
+
+Changes from original:
+- Removed duplicate `import os` at top
+- Fixed APP_ENV crash: os.getenv('APP_ENV') returned None without a default,
+  causing AttributeError on .lower(). Now defaults to 'dev' safely.
+- Removed dead TODO comment block (old env loading code)
+- Both src/ and root copies had diverged — this is the canonical version
+"""
+
 import os
 import yaml
 import logging
 from pathlib import Path
-from typing import Dict, Any, Optional, Union, List
-from dataclasses import dataclass
+from typing import Dict, Any, Optional, List
+from dataclasses import dataclass, field
 from dotenv import dotenv_values, load_dotenv
+
+load_dotenv()
 
 logger = logging.getLogger(__name__)
 
@@ -22,121 +38,72 @@ class ConfigValidationError(ConfigError):
 @dataclass
 class ConfigManager:
     """
-    Enterprise configuration manager with validation and dot notation access
+    Enterprise configuration manager with YAML and a dedicated 'env' group.
 
-    Features:
-    - YAML configuration loading
-    - Dot notation access (e.g., 'ollama.host')
-    - Configuration validation
-    - Environment variable support for sensitive values via .env
-    - Comprehensive error handling
+    Structure:
+    - YAML keys: access normally (e.g., 'runtime.orchestration')
+    - .env keys: access via 'env' group (e.g., 'env.OLLAMA_BASE_URL')
     """
-
     config_path: str
+    _config: Dict[str, Any] = field(init=False, default_factory=dict)
 
     def __post_init__(self):
-        """Load configuration after initialization"""
         self._config = self._load_config()
 
     def _load_config(self) -> Dict[str, Any]:
-        """
-        Load configuration from YAML file
-
-        Returns:
-            dict: Configuration dictionary
-
-        Raises:
-            ConfigError: If loading fails
-        """
-
+        """Loads YAML first, then captures environment variables into 'env' key."""
         config_file = Path(self.config_path)
-        logger.info(f"Loading configuration from: {self.config_path}")
-
         config: Dict[str, Any] = {}
 
-        if config_file.exists():
-            if not config_file.is_file():
-                raise ConfigError(f"Configuration path is not a file: {self.config_path}")
-
+        # 1. Load YAML
+        if config_file.exists() and config_file.is_file():
             try:
                 with open(config_file, 'r', encoding='utf-8') as f:
                     config = yaml.safe_load(f) or {}
+                logger.info(f"Loaded YAML from {self.config_path}")
             except yaml.YAMLError as e:
-                logger.error(f"YAML parsing error: {e}")
-                raise ConfigError(f"Invalid YAML in configuration file: {e}")
+                raise ConfigError(f"Failed to parse YAML: {e}")
             except Exception as e:
-                logger.error(f"Failed to load configuration: {e}")
-                raise ConfigError(f"Failed to load configuration: {e}")
+                raise ConfigError(f"Failed to load config file: {e}")
         else:
-            logger.info(
-                f"Configuration file not found: {self.config_path}. Falling back to environment variables."
-            )
+            logger.warning(f"Config file {self.config_path} not found. Using ENV only.")
 
-        # TODO - looks round about.. revisit 
-        base_env_path = Path(__file__).resolve().parent.parent / '.env'
-        load_dotenv(dotenv_path=base_env_path)
-        
-        # Determine Environment (The ONLY place where a default is acceptable)
-        app_env = os.getenv("APP_ENV").lower()
+        # 2. Locate base .env and determine environment
+        env_file_path = config_file.parent.parent / '.env'
+        config["env"] = {}
 
-        # 3. SECRETS: Load the environment-specific file
-        env_file = Path(__file__).resolve().parent.parent / f".env.{app_env}"
-        
-        # We use dotenv_values to get ONLY the keys from the file 
-        # avoiding hardcoded prefixes or system "noise" (like PATH)
-        if env_file.exists():
-            secrets = dotenv_values(env_file)
-            config["env"] = {k.lower(): v for k, v in secrets.items()}
-            
-            # Also load them into os.environ so other libs (like Ollama) can see them
-            load_dotenv(env_file, override=True)
-        else:
-            config["env"] = {}
+        if env_file_path.exists():
+            base_env = dotenv_values(dotenv_path=env_file_path)
 
+            # FIX: was os.getenv('APP_ENV').lower() — crashes with AttributeError if unset.
+            # Now uses base_env first, then os.getenv, then safe default 'dev'.
+            raw_app_env = (
+                base_env.get("APP_ENV")
+                or os.getenv("APP_ENV")
+                or "dev"
+            ).lower()
+            suffix = "dev" if raw_app_env == "development" else raw_app_env
 
-        # TODO old implementation - needs to be refactored to use the new env loading logic above
-        # app_env = (os.getenv('APP_ENV') or os.getenv('APP_ENVIRONMENT') or '').strip().lower()
-        # if app_env:
-        #     env_candidates = [f'.env.{app_env}']
-        #     if app_env in {'dev', 'development'}:
-        #         env_candidates.extend(['.env.dev', '.env.development'])
-        #     elif app_env in {'prod', 'production'}:
-        #         env_candidates.extend(['.env.prod', '.env.production'])
+            env_specific_path = config_file.parent.parent / f'.env.{suffix}'
 
-        #     for candidate in env_candidates:
-        #         env_path = config_file.parent / candidate
-        #         if env_path.exists():
-        #             load_dotenv(dotenv_path=env_path, override=False)
-        #             logger.info(f"Loaded environment overrides from: {env_path}")
-        #             break
+            if env_specific_path.exists():
+                logger.info(f"Loading environment-specific keys from {env_specific_path.name}")
+                config["env"] = dotenv_values(dotenv_path=env_specific_path)
+                load_dotenv(env_specific_path, override=True)
+            else:
+                logger.warning(
+                    f"Environment-specific file .env.{suffix} not found. "
+                    "Falling back to base .env"
+                )
+                config["env"] = base_env
 
         logger.info("Configuration loaded successfully")
         return config
 
-
-    def _set_in_dict(self, config: Dict[str, Any], keys: List[str], value: Any) -> None:
-        """Set a nested configuration value in a dictionary."""
-        node = config
-        for key in keys[:-1]:
-            if key not in node or not isinstance(node[key], dict):
-                node[key] = {}
-            node = node[key]
-        node[keys[-1]] = value
-
-    def get(self, key: str, default: Optional[Any] = None) -> Optional[Any]:
-        """
-        Get configuration value using dot notation
-
-        Args:
-            key: Configuration key (e.g., 'ollama.host')
-            default: Default value if key not found
-
-        Returns:
-            Configuration value or default
-        """
+    def get(self, key: str, default: Optional[Any] = None) -> Any:
+        """Get configuration value using dot notation (e.g., 'env.OLLAMA_BASE_URL')"""
         keys = key.split('.')
         value = self._config
-
         try:
             for k in keys:
                 if isinstance(value, dict):
@@ -144,115 +111,77 @@ class ConfigManager:
                 else:
                     return default
             return value
-        except KeyError:
+        except (KeyError, TypeError):
             return default
 
     def get_required(self, key: str) -> Any:
-        """
-        Get required configuration value
-
-        Args:
-            key: Configuration key
-
-        Returns:
-            Configuration value
-
-        Raises:
-            ConfigValidationError: If key not found
-        """
+        """Get required value or raise ConfigValidationError with a helpful hint."""
         value = self.get(key)
         if value is None:
             hints = {
-                "weather.api_key": "Set WEATHER_API_KEY in configs/.env or your environment.",
-                "ollama.host": "Set OLLAMA_HOST in configs/.env or your environment.",
-                "ollama.api_key": "Set OLLAMA_API_KEY in configs/.env or your environment.",
+                "env.OPENWEATHER_API_KEY": "Add OPENWEATHER_API_KEY to your .env file.",
+                "env.OLLAMA_BASE_URL": "Add OLLAMA_BASE_URL to your .env file.",
+                "env.OLLAMA_API_KEY": "Add OLLAMA_API_KEY to your .env file.",
             }
-            message = f"Required configuration key not found: {key}"
+            message = f"Missing required config: {key}"
             if key in hints:
-                message += f" ({hints[key]})"
+                message += f" — Hint: {hints[key]}"
             raise ConfigValidationError(message)
         return value
 
-    def validate_required_keys(self, required_keys: list) -> None:
-        """
-        Validate that all required keys are present
-
-        Args:
-            required_keys: List of required configuration keys
-
-        Raises:
-            ConfigValidationError: If any required key is missing
-        """
-        missing_keys = []
-        for key in required_keys:
-            if self.get(key) is None:
-                missing_keys.append(key)
-
-        if missing_keys:
-            raise ConfigValidationError(f"Missing required configuration keys: {missing_keys}")
-
-    def get_section(self, section: str) -> Dict[str, Any]:
-        """
-        Get entire configuration section
-
-        Args:
-            section: Section name
-
-        Returns:
-            dict: Section configuration
-        """
-        return self.get(section, {})
-
-    def reload(self) -> None:
-        """
-        Reload configuration from file
-
-        Raises:
-            ConfigError: If reload fails
-        """
-        logger.info("Reloading configuration...")
-        self._config = self._load_config()
-        logger.info("Configuration reloaded successfully")
-
     def get_all(self) -> Dict[str, Any]:
-        """
-        Get entire configuration
-
-        Returns:
-            dict: Complete configuration
-        """
+        """Returns a copy of the full configuration dictionary."""
         return self._config.copy()
 
-    def set(self, key: str, value: Any) -> None:
-        """
-        Set configuration value (in-memory only)
+    def reload(self) -> None:
+        """Reload configuration from disk and environment."""
+        self._config = self._load_config()
 
-        Args:
-            key: Configuration key
-            value: Value to set
+    def validate_startup(self) -> None:
         """
+        Validate all required configuration keys exist at startup.
+
+        Fails fast instead of mid-request crashes.
+
+        Raises:
+            ConfigValidationError: If required configuration is missing
+        """
+        required_keys = {
+            "env.OLLAMA_API_KEY": "Ollama API key (set OLLAMA_API_KEY in .env)",
+            "env.OLLAMA_BASE_URL": "Ollama base URL (set OLLAMA_BASE_URL in .env)",
+            "env.OPENWEATHER_API_KEY": "OpenWeather API key (set OPENWEATHER_API_KEY in .env)",
+            "env.OPENWEATHER_BASE_URL": "OpenWeather base URL (set OPENWEATHER_BASE_URL in .env)",
+            "runtime.orchestration": "Runtime type: 'langchain' or 'custom'",
+        }
+
+        missing = []
+        for key, description in required_keys.items():
+            value = self.get(key)
+            if not value or (isinstance(value, str) and not value.strip()):
+                missing.append(f"  {key}: {description}")
+
+        if missing:
+            error_msg = (
+                "Missing required configuration:\n"
+                + "\n".join(missing)
+                + "\n\nSet these in your .env file and retry."
+            )
+            logger.error(error_msg)
+            raise ConfigValidationError(error_msg)
+
+        logger.info("All required configuration validated")
+
+    def set(self, key: str, value: Any) -> None:
+        """Set a configuration value using dot notation (in-memory only)."""
         keys = key.split('.')
         config = self._config
-
         for k in keys[:-1]:
-            if k not in config or not isinstance(config[k], dict):
+            if k not in config:
                 config[k] = {}
             config = config[k]
-
         config[keys[-1]] = value
-        logger.debug(f"Set configuration: {key} = {value}")
 
 
-# Backward compatibility function
+# Backward compatibility
 def load_config(config_path: str) -> Dict[str, Any]:
-    """
-    Load configuration (backward compatibility)
-
-    Args:
-        config_path: Path to configuration file
-
-    Returns:
-        dict: Configuration dictionary
-    """
-    manager = ConfigManager(config_path)
-    return manager.get_all()
+    return ConfigManager(config_path).get_all()

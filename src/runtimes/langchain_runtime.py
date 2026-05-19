@@ -50,8 +50,8 @@ class LangChainRuntime(BaseRuntime):
             self.config_manager = config_manager
             
             #  FIX 1: Use ChatOllama for conversational agent state management
-            ollama_base_url = config_manager.get("env.OLLAMA_BASE_URL", "http://localhost:11434")
-            ollama_model = config_manager.get("env.LLM_MODEL", default="llama3.1")
+            ollama_base_url = config_manager.get("env.OLLAMA_BASE_URL")
+            ollama_model = config_manager.get("env.LLM_MODEL")
             
             logger.info(f"Initializing ChatOllama with model: {ollama_model}")
             self.llm = ChatOllama(
@@ -152,7 +152,7 @@ class LangChainRuntime(BaseRuntime):
                 output_tokens=output_tokens,
                 total_tokens=input_tokens + output_tokens,
                 latency_ms=latency_ms,
-                model=self.config_manager.get("env.LLM_MODEL", default="llama3.1")
+                model=self.config_manager.get("env.LLM_MODEL")
             )
             
             return response
