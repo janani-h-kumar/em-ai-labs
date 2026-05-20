@@ -1,0 +1,8 @@
+-r base.txt
+
+pytest
+pytest-mock
+pytest-cov
+black
+ruff
+mypy
