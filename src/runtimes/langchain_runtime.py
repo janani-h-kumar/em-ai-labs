@@ -20,6 +20,8 @@ import logging
 import time
 from typing import List, Optional, Dict, Any
 
+import concurrent
+import concurrent.futures
 import requests
 from langchain_ollama import ChatOllama
 from langgraph.prebuilt import create_react_agent
@@ -203,9 +205,18 @@ class LangChainRuntime(BaseRuntime):
                     "Agent executor not initialised — no tools available."
                 )
 
-            result = self.agent_executor.invoke(
-                {"messages": [("user", message)]}
-            )
+            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+                future = executor.submit(
+                    self.agent_executor.invoke,
+                    {"messages": [("user", message)]}
+                )
+                try:
+                    result = future.result(timeout=self.INVOKE_TIMEOUT_SECONDS)
+                except concurrent.futures.TimeoutError:
+                    raise LangChainRuntimeExecutionError(
+                        f"Agent did not respond within {self.INVOKE_TIMEOUT_SECONDS}s. "
+                        "Try a shorter query or increase INVOKE_TIMEOUT_SECONDS."
+                )
 
             messages = result.get("messages", [])
             response = messages[-1].content if messages else "No response generated."
@@ -251,7 +262,7 @@ class LangChainRuntime(BaseRuntime):
         inference on every health poll (expensive, slow, burns GPU time).
         """
         ollama_base_url = self.config_manager.get(
-            "env.OLLAMA_BASE_URL", "http://localhost:11434"
+            "env.OLLAMA_BASE_URL"
         )
         try:
             url = ollama_base_url.rstrip("/") + "/api/tags"

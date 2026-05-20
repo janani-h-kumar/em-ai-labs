@@ -1,8 +1,8 @@
 from abc import ABC, abstractmethod
 import logging
 from typing import Optional, Dict, Any
-from utils.config_loader import ConfigManager
-
+#from utils.config_loader import ConfigManager
+from src.utils.config_loader import ConfigManager
 
 class BaseAgent(ABC):
     """

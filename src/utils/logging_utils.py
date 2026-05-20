@@ -15,6 +15,9 @@ import socket
 from typing import Optional, Dict, Any
 from datetime import datetime, timezone
 from logging.handlers import RotatingFileHandler
+from pathlib import Path
+
+Path("logs").mkdir(exist_ok=True)
 
 SERVICE_NAME = "em-ai-labs"
 HOSTNAME = socket.gethostname()
