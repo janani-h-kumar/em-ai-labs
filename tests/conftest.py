@@ -1,21 +1,26 @@
 """
 Pytest fixtures for offline testing with mocked external APIs.
 
-These fixtures enable tests to run without hitting real APIs, making them
-fast (~100x faster), reproducible, and reliable regardless of external service availability.
+Changes from original:
+- Fixed mock_web_search_api: original returned results[].link but the actual
+  DuckDuckGo API returns results[].FirstURL. Tests passed but would have
+  failed against the real API — a false green. Now matches the real contract.
+- config_for_testing now uses uppercase env keys (OLLAMA_API_KEY, etc.) to
+  match the real ConfigManager behaviour and avoid key-casing bugs in tests.
+- Added explicit docstrings explaining what each fixture simulates.
 """
 
 import pytest
-from unittest.mock import Mock, MagicMock, patch
+from unittest.mock import Mock, patch
 
 
 @pytest.fixture
 def mock_weather_api():
     """
     Mock OpenWeatherMap API responses.
-    
-    Replaces requests.get to simulate successful weather API calls.
-    Returns realistic weather data for testing.
+
+    Patches requests.get in weather_tool so no real HTTP calls are made.
+    Returns a realistic London weather payload.
     """
     with patch('src.tools.weather_tool.requests.get') as mock_get:
         mock_response = Mock()
@@ -27,16 +32,11 @@ def mock_weather_api():
                 "temp": 15.2,
                 "feels_like": 14.8,
                 "humidity": 72,
-                "pressure": 1013
+                "pressure": 1013,
             },
-            "weather": [
-                {
-                    "main": "Cloudy",
-                    "description": "overcast clouds"
-                }
-            ],
+            "weather": [{"main": "Cloudy", "description": "overcast clouds"}],
             "wind": {"speed": 3.5},
-            "clouds": {"all": 90}
+            "clouds": {"all": 90},
         }
         mock_get.return_value = mock_response
         yield mock_get
@@ -46,22 +46,20 @@ def mock_weather_api():
 def mock_ollama_api():
     """
     Mock Ollama LLM API responses.
-    
-    Replaces OpenAI client to simulate successful LLM calls.
-    Returns realistic responses and token counts for testing.
+
+    Patches the OpenAI client used by OllamaClient so no model inference
+    is needed to run tests.
     """
     with patch('src.providers.ollama_provider.OpenAI') as mock_client:
         mock_response = Mock()
         mock_response.choices = [Mock()]
         mock_response.choices[0].message.content = (
-            "London is currently cloudy with a temperature of 15°C, "
-            "with humidity at 72% and a gentle breeze at 3.5 m/s. "
-            "Perfect weather for a light jacket!"
+            "London is currently cloudy at 15°C — pack a light jacket!"
         )
         mock_response.usage.prompt_tokens = 45
         mock_response.usage.completion_tokens = 22
         mock_response.usage.total_tokens = 67
-        
+
         mock_client.return_value.chat.completions.create.return_value = mock_response
         yield mock_client
 
@@ -70,30 +68,29 @@ def mock_ollama_api():
 def mock_web_search_api():
     """
     Mock DuckDuckGo web search API responses.
-    
-    Replaces requests.get for web search to simulate successful search calls.
-    Returns realistic search results for testing.
+
+    FIX: original mock returned results[].link but the real DuckDuckGo
+    instant-answer API returns results[].FirstURL. Mismatched keys meant
+    tests passed while the real code would have silently returned empty URLs.
     """
     with patch('src.tools.web_search_tool.requests.get') as mock_get:
         mock_response = Mock()
         mock_response.status_code = 200
+        # FIX: use 'FirstURL' (real API key), not 'link' (wrong key)
         mock_response.json.return_value = {
-            "results": [
+            "RelatedTopics": [
                 {
-                    "title": "Python Best Practices - Real Python",
-                    "link": "https://realpython.com/python-best-practices",
-                    "snippet": "Follow PEP 8, use type hints, write tests, and maintain clear documentation..."
+                    "Text": "Python Best Practices — Follow PEP 8, use type hints, write tests.",
+                    "FirstURL": "https://realpython.com/python-best-practices",
                 },
                 {
-                    "title": "Clean Code Principles",
-                    "link": "https://example.com/clean-code",
-                    "snippet": "Code is read more often than written. Optimize for readability first."
+                    "Text": "Clean Code Principles — Code is read more often than written.",
+                    "FirstURL": "https://example.com/clean-code",
                 },
                 {
-                    "title": "Python Coding Standards",
-                    "link": "https://example.com/coding-standards",
-                    "snippet": "Comprehensive guide to writing production-quality Python code..."
-                }
+                    "Text": "Python Coding Standards — Comprehensive guide to production Python.",
+                    "FirstURL": "https://example.com/coding-standards",
+                },
             ]
         }
         mock_get.return_value = mock_response
@@ -103,20 +100,26 @@ def mock_web_search_api():
 @pytest.fixture
 def config_for_testing():
     """
-    Provide test configuration without requiring real API keys.
-    
-    Returns a ConfigManager instance with test values.
+    Provide a ConfigManager instance with test values — no real API keys needed.
+
+    FIX: original used lowercase keys (ollama_api_key) but ConfigManager
+    stores .env keys in their original case (OLLAMA_API_KEY). Lowercase keys
+    caused get_required('env.OLLAMA_API_KEY') to return None in tests.
     """
     from src.utils.config_loader import ConfigManager
-    
-    config = ConfigManager("configs/config.yaml")
-    # Set test values
-    config._config["runtime"] = {"orchestration": "langchain"}
-    config._config["env"] = {
-        "ollama_api_key": "test-key",
-        "ollama_base_url": "http://localhost:11434",
-        "openweather_api_key": "test-key",
-        "openweather_base_url": "https://api.openweathermap.org/data/2.5"
+
+    config = ConfigManager.__new__(ConfigManager)
+    config.config_path = "configs/config.yaml"
+    config._config = {
+        "runtime": {"orchestration": "langchain"},
+        # FIX: uppercase keys — match what dotenv_values() returns from .env files
+        "env": {
+            "OLLAMA_API_KEY": "test-key",
+            "OLLAMA_BASE_URL": "http://localhost:11434",
+            "OLLAMA_MODEL": "llama3.1",
+            "OPENWEATHER_API_KEY": "test-weather-key",
+            "OPENWEATHER_BASE_URL": "https://api.openweathermap.org/data/2.5",
+        },
     }
     return config
 
@@ -124,12 +127,10 @@ def config_for_testing():
 @pytest.fixture
 def mock_all_apis(mock_weather_api, mock_ollama_api, mock_web_search_api):
     """
-    Fixture combining all API mocks for comprehensive integration testing.
-    
-    Use this when testing workflows that call multiple APIs.
+    Combined fixture for integration tests that call multiple APIs.
     """
     return {
         "weather": mock_weather_api,
         "ollama": mock_ollama_api,
-        "web_search": mock_web_search_api
+        "web_search": mock_web_search_api,
     }

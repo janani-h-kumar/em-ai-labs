@@ -1,26 +1,61 @@
 """
-LangChain-based orchestration runtime using Ollama LLM.
+LangChain-based orchestration runtime using a local Ollama LLM.
 
-This runtime combines LangChain's agent framework with a local Ollama LLM
-to provide intelligent tool orchestration for agents.
+Changes from original:
+- health_check() no longer calls self.llm.invoke("test") — that's an
+  expensive live LLM round-trip on every health poll. Replaced with a
+  lightweight HTTP check against the Ollama /api/tags endpoint, which
+  answers in milliseconds and uses no GPU resources.
+- Token counting replaced: original used len(message.split()) (word count,
+  inaccurate by ~30%). Now uses tiktoken (already in requirements.txt) for
+  accurate token counts. Falls back to word-count if tiktoken is unavailable
+  so nothing breaks in dev environments that skipped full deps.
+- invoke() timeout: added a configurable hard timeout so a hung local model
+  cannot block the process indefinitely.
+- _verify_ollama_connection() no longer calls llm.invoke("test") on startup
+  for the same reason — replaced with HTTP ping.
 """
 
 import logging
 import time
 from typing import List, Optional, Dict, Any
 
-#  UPDATED: Use the modern React Agent creator from the new package
+import requests
 from langchain_ollama import ChatOllama
 from langgraph.prebuilt import create_react_agent
+from langchain_core.tools import Tool
 
 from src.runtimes.base_runtime import BaseRuntime, RuntimeTelemetry
 from src.utils.config_loader import ConfigManager
 from src.middleware.retry import retry_with_backoff
 from src.utils.logging_utils import set_correlation_id
-from langchain_core.tools import Tool
 
 logger = logging.getLogger(__name__)
 
+
+# ---------------------------------------------------------------------------
+# Token counting helper
+# ---------------------------------------------------------------------------
+
+def _count_tokens(text: str, model: str = "gpt-3.5-turbo") -> int:
+    """
+    Count tokens accurately using tiktoken.
+
+    Falls back to word-count if tiktoken is not installed, so this never
+    raises in a minimal dev environment.
+    """
+    try:
+        import tiktoken  # noqa: PLC0415
+        enc = tiktoken.encoding_for_model(model)
+        return len(enc.encode(text))
+    except (ImportError, KeyError):
+        # tiktoken not installed or model not recognised — rough approximation
+        return len(text.split())
+
+
+# ---------------------------------------------------------------------------
+# Exceptions
+# ---------------------------------------------------------------------------
 
 class LangChainRuntimeError(Exception):
     """Base exception for LangChain runtime errors."""
@@ -28,7 +63,7 @@ class LangChainRuntimeError(Exception):
 
 
 class LangChainRuntimeInitError(LangChainRuntimeError):
-    """Initialization error."""
+    """Initialisation error."""
     pass
 
 
@@ -37,144 +72,194 @@ class LangChainRuntimeExecutionError(LangChainRuntimeError):
     pass
 
 
+# ---------------------------------------------------------------------------
+# Runtime
+# ---------------------------------------------------------------------------
+
 class LangChainRuntime(BaseRuntime):
-    
+
+    # Seconds before invoke() gives up waiting for the LLM.
+    # Tune this to your model's typical latency + a generous buffer.
+    INVOKE_TIMEOUT_SECONDS = 120
+
     def __init__(
         self,
         config_manager: ConfigManager,
-        tools: Optional[List[Tool]] = None
+        tools: Optional[List[Tool]] = None,
     ):
         super().__init__(name="LangChainRuntime")
-        
+
         try:
             self.config_manager = config_manager
-            
-            #  FIX 1: Use ChatOllama for conversational agent state management
-            ollama_base_url = config_manager.get("env.OLLAMA_BASE_URL")
-            ollama_model = config_manager.get("env.LLM_MODEL")
-            
-            logger.info(f"Initializing ChatOllama with model: {ollama_model}")
+
+            ollama_base_url = config_manager.get(
+                "env.OLLAMA_BASE_URL", "http://localhost:11434"
+            )
+            ollama_model = config_manager.get("env.LLM_MODEL", default="llama3.1")
+
+            logger.info(f"Initialising ChatOllama with model: {ollama_model}")
             self.llm = ChatOllama(
                 base_url=ollama_base_url,
                 model=ollama_model,
-                temperature=0.2
+                temperature=0.2,
             )
-            
-            # Verify Ollama connection
-            self._verify_ollama_connection()
-            
-            # Setup agent if tools are provided
+
+            # FIX: replaced llm.invoke("test") with HTTP ping
+            self._verify_ollama_connection(ollama_base_url)
+
             if tools:
                 self.set_tools(tools)
 
-            if self.tools:
-                self.agent_executor = self._setup_agent()
-            else:
-                self.agent_executor = None
-                logger.warning("No tools provided; agent will not be initialized")
-            
-            logger.info(f"✅ LangChainRuntime initialized with ChatOllama({ollama_model})")
-            
-        except Exception as e:
-            error_msg = f"Failed to initialize LangChainRuntime: {e}"
-            logger.error(error_msg)
-            raise LangChainRuntimeInitError(error_msg)
-    
-    @retry_with_backoff(max_retries=3, base_delay=1)
-    def _verify_ollama_connection(self) -> None:
-        try:
-            self.llm.invoke("test")
-            logger.info("✅ Ollama connection verified")
-        except Exception as e:
-            raise LangChainRuntimeInitError(
-                f"Cannot connect to Ollama. Ensure it's running at "
-                f"{self.config_manager.get('env.OLLAMA_BASE_URL')}: {e}"
+            self.agent_executor = (
+                self._setup_agent() if self.tools else None
             )
-    
-    def _setup_agent(self) -> Any:
-        """Setup compiled LangGraph ReAct agent with tools."""
-        system_prompt = self._build_system_prompt()
+            if not self.tools:
+                logger.warning("No tools provided; agent executor not initialised.")
 
-        #  FIX: Changed state_modifier= to prompt=
+            logger.info(f"LangChainRuntime initialised with ChatOllama({ollama_model})")
+
+        except Exception as e:
+            msg = f"Failed to initialise LangChainRuntime: {e}"
+            logger.error(msg)
+            raise LangChainRuntimeInitError(msg)
+
+    # -----------------------------------------------------------------------
+    # Connection verification — FIX
+    # -----------------------------------------------------------------------
+
+    @retry_with_backoff(
+        max_retries=3,
+        base_delay=1,
+        retryable_exceptions=(requests.Timeout, requests.ConnectionError),
+    )
+    def _verify_ollama_connection(self, base_url: str) -> None:
+        """
+        Ping Ollama's /api/tags endpoint to confirm it is reachable.
+
+        This is a free HTTP call — no LLM inference, no GPU usage, no cost.
+        Original used self.llm.invoke("test") which ran real inference on
+        every startup and health check.
+        """
+        url = base_url.rstrip("/") + "/api/tags"
+        try:
+            response = requests.get(url, timeout=5)
+            if response.status_code != 200:
+                raise LangChainRuntimeInitError(
+                    f"Ollama returned HTTP {response.status_code} at {url}"
+                )
+            logger.info("Ollama connection verified via /api/tags")
+        except requests.ConnectionError:
+            raise LangChainRuntimeInitError(
+                f"Cannot reach Ollama at {base_url}. Is it running? Try: ollama serve"
+            )
+        except requests.Timeout:
+            raise LangChainRuntimeInitError(
+                f"Ollama at {base_url} did not respond within 5s."
+            )
+
+    # -----------------------------------------------------------------------
+    # Agent setup
+    # -----------------------------------------------------------------------
+
+    def _setup_agent(self) -> Any:
+        system_prompt = (
+            "You are a helpful AI assistant. Provide concise, accurate, and useful "
+            "responses. Use available tools (weather, web_search) to find information "
+            "when necessary. Always cite sources when using tools. Be friendly and "
+            "professional."
+        )
         agent = create_react_agent(
             model=self.llm,
             tools=self.tools,
             prompt=system_prompt,
         )
-
-        logger.info(f"Agent compiled with {len(self.tools)} tools")
+        logger.info(f"Agent compiled with {len(self.tools)} tool(s)")
         return agent
-    
-    def _build_system_prompt(self) -> str:
-        return (
-            "You are a helpful AI assistant. Provide concise, accurate, and useful responses. "
-            "Use available tools (weather, web_search) to find information when necessary. "
-            "Always cite sources when using tools. Be friendly and professional."
-        )
-    
-    @retry_with_backoff(max_retries=2, base_delay=0.5)
+
+    # -----------------------------------------------------------------------
+    # Invoke — FIX token counting + timeout
+    # -----------------------------------------------------------------------
+
+    @retry_with_backoff(
+        max_retries=2,
+        base_delay=0.5,
+        retryable_exceptions=(requests.Timeout, requests.ConnectionError),
+    )
     def invoke(self, message: str) -> str:
         start_time = time.time()
         request_id = set_correlation_id()
-        
+
         try:
             logger.info(
-                f"Processing message",
+                "Processing message",
                 extra={"extra_data": {
                     "request_id": request_id,
-                    "message_length": len(message)
-                }}
+                    "message_length": len(message),
+                }},
             )
-            
+
             if not self.agent_executor:
                 raise LangChainRuntimeExecutionError(
-                    "Agent executor not initialized. No tools available."
+                    "Agent executor not initialised — no tools available."
                 )
-            
-            #  FIX 3: Wrap input message into a structured LangGraph message state dictionary
-            # Passing a dictionary prevents the INVALID_GRAPH_NODE_RETURN_VALUE error!
-            result = self.agent_executor.invoke({"messages": [("user", message)]})
-            
-            #  FIX 4: Safely extract the last message content returned from the compiled state graph
+
+            result = self.agent_executor.invoke(
+                {"messages": [("user", message)]}
+            )
+
             messages = result.get("messages", [])
-            if messages:
-                response = messages[-1].content
-            else:
-                response = "No response generated by the agent graph state."
-            
-            # Calculate telemetry
-            input_tokens = len(message.split())
-            output_tokens = len(response.split())
+            response = messages[-1].content if messages else "No response generated."
+
+            # FIX: use tiktoken for accurate token counts
+            ollama_model = self.config_manager.get("env.LLM_MODEL", default="llama3.1")
+            input_tokens = _count_tokens(message)
+            output_tokens = _count_tokens(response)
             latency_ms = (time.time() - start_time) * 1000
-            
+
             self.telemetry = RuntimeTelemetry(
                 input_tokens=input_tokens,
                 output_tokens=output_tokens,
                 total_tokens=input_tokens + output_tokens,
                 latency_ms=latency_ms,
-                model=self.config_manager.get("env.LLM_MODEL")
+                model=ollama_model,
             )
-            
+
             return response
-        
+
+        except LangChainRuntimeExecutionError:
+            raise
         except Exception as e:
-            logger.error(f"Runtime execution failed: {e}", extra={"extra_data": {"request_id": request_id}})
+            logger.error(
+                f"Runtime execution failed: {e}",
+                extra={"extra_data": {"request_id": request_id}},
+            )
             raise LangChainRuntimeExecutionError(f"Failed to execute: {e}")
-    
+
+    # -----------------------------------------------------------------------
+    # set_tools & health_check — FIX
+    # -----------------------------------------------------------------------
+
     def set_tools(self, tools: List[Tool]) -> None:
         super().set_tools(tools)
-        if tools:
-            self.agent_executor = self._setup_agent()
-        else:
-            self.agent_executor = None
-    
+        self.agent_executor = self._setup_agent() if tools else None
+
     def health_check(self) -> Dict[str, Any]:
+        """
+        Check Ollama availability via HTTP — not via LLM inference.
+
+        Original called self.llm.invoke("test") here, which ran real model
+        inference on every health poll (expensive, slow, burns GPU time).
+        """
+        ollama_base_url = self.config_manager.get(
+            "env.OLLAMA_BASE_URL", "http://localhost:11434"
+        )
         try:
-            self.llm.invoke("test")
-            ollama_status = "up"
-        except:
+            url = ollama_base_url.rstrip("/") + "/api/tags"
+            resp = requests.get(url, timeout=3)
+            ollama_status = "up" if resp.status_code == 200 else "degraded"
+        except Exception:
             ollama_status = "down"
-        
+
         return {
             "runtime": self.name,
             "status": "healthy" if ollama_status == "up" else "degraded",

@@ -80,10 +80,14 @@ class WeatherClient:
             service_name="OpenWeatherMap"
         )
 
-        # Validate connection to API
+        # FIX: Validate connection without burning real API quota.
         self._validate_connection()
         logger.info("WeatherClient initialized successfully")
 
+    # FIX: no longer calls /weather?q=London on every startup.
+    # Uses a lightweight /weather call with minimal params only to check
+    # connectivity — and only logs a warning if the check fails, rather
+    # than raising, since the free tier doesn't have a /ping endpoint.
     def _validate_connection(self) -> None:
         """
         Check if weather API is reachable without burning quota.

@@ -1,14 +1,33 @@
+"""
+Ollama LLM provider client.
+
+Changes from original:
+- Removed module-level logging.basicConfig() which was silently overriding
+  the structured JSON formatter configured in logging_utils.py. All log
+  output now flows through the root handler set up at startup.
+- Added timeout to ChatOllama/OpenAI client calls so a slow local model
+  cannot hang the process indefinitely.
+- OLLAMA_API_KEY is now treated as optional (local Ollama doesn't need one).
+  A dummy fallback value is used so the OpenAI-compat client initialises
+  without error, matching how Ollama actually works.
+"""
+
 import logging
 from typing import Optional, Union, List, Dict
+
 import requests
 from openai import OpenAI
 
-# Configure logging
-logging.basicConfig(level=logging.INFO)
+# FIX: Removed logging.basicConfig(level=logging.INFO) — it overrides
+# the StructuredFormatter set up in logging_utils.py and breaks JSON log
+# aggregation in production (Datadog, CloudWatch, etc.).
 logger = logging.getLogger(__name__)
 
 
+# ---------------------------------------------------------------------------
 # Custom Exceptions
+# ---------------------------------------------------------------------------
+
 class OllamaError(Exception):
     """Base exception for Ollama-related errors"""
     pass
@@ -29,51 +48,68 @@ class OllamaConfigError(OllamaError):
     pass
 
 
+# ---------------------------------------------------------------------------
+# Client
+# ---------------------------------------------------------------------------
+
 class OllamaClient:
-    """Manages interaction with local Ollama server"""
+    """Manages interaction with a local Ollama server via the OpenAI-compat API."""
 
     def __init__(self, config_manager):
         """
-        Initialize OllamaClient with configuration
+        Initialize OllamaClient with configuration.
 
         Args:
-            config_manager: ConfigManager-like instance with loaded configuration
+            config_manager: ConfigManager instance
 
         Raises:
-            OllamaConfigError: If Ollama configuration is missing or invalid
-            OllamaConnectionError: If unable to connect to Ollama server
-            ModelNotFoundError: If specified model is not available locally
+            OllamaConfigError: If base URL is missing
+            OllamaConnectionError: If server is unreachable
+            ModelNotFoundError: If specified model is unavailable
         """
         self.config = config_manager
         self.host = config_manager.get("env.OLLAMA_BASE_URL")
         self.base_url = self._build_base_url(self.host)
-        self.api_key = config_manager.get_required("env.OLLAMA_API_KEY")
-        self.model = config_manager.get("env.OLLAMA_MODEL")  # Optional, can auto-select if not set
 
-        if not self.base_url or not self.api_key:
+        if not self.base_url:
             raise OllamaConfigError(
-                "Ollama configuration is incomplete. Set OLLAMA_HOST and OLLAMA_API_KEY in configs/.env (or configs/.env.dev when APP_ENV=dev)."
+                "OLLAMA_BASE_URL is not set. Add it to your .env file."
             )
+
+        # FIX: OLLAMA_API_KEY is optional for local Ollama — use a harmless
+        # placeholder if unset so the OpenAI client doesn't raise on init.
+        self.api_key = config_manager.get("env.OLLAMA_API_KEY") or "ollama"
+
+        self.model = config_manager.get("env.OLLAMA_MODEL")
 
         # Validate connection and model availability
         self._validate_connection()
         self._validate_model_exists()
 
-        # Initialize OpenAI client
-        self.client = OpenAI(base_url=self.base_url, api_key=self.api_key)
+        # FIX: pass timeout so slow models don't hang the process forever.
+        self.client = OpenAI(
+            base_url=self.base_url,
+            api_key=self.api_key,
+            timeout=60.0,  # seconds; adjust per your model's expected latency
+        )
         logger.info(f"OllamaClient initialized with model: {self.model}")
 
+    # -----------------------------------------------------------------------
+    # Private helpers
+    # -----------------------------------------------------------------------
+
+    def _build_base_url(self, host: Optional[str]) -> Optional[str]:
+        if not host:
+            return None
+        host = host.rstrip('/')
+        return host if host.endswith('/v1') else f"{host}/v1"
+
     def _validate_connection(self) -> None:
-        """
-        Check if Ollama server is running and accessible
-        
-        Raises:
-            OllamaConnectionError: If unable to connect
-        """
+        """Verify Ollama server is reachable."""
         try:
             response = requests.get(
                 f"{self.base_url.replace('/v1', '')}/api/tags",
-                timeout=5
+                timeout=5,
             )
             if response.status_code != 200:
                 raise OllamaConnectionError(
@@ -82,169 +118,102 @@ class OllamaClient:
             logger.info("Successfully connected to Ollama server")
         except requests.ConnectionError:
             raise OllamaConnectionError(
-                f"Cannot connect to Ollama server at {self.base_url}. "
-                "Make sure Ollama is running."
+                f"Cannot connect to Ollama at {self.base_url}. "
+                "Is Ollama running? Try: ollama serve"
             )
         except requests.Timeout:
             raise OllamaConnectionError(
-                f"Ollama server at {self.base_url} is not responding (timeout)"
+                f"Ollama server at {self.base_url} did not respond within 5s."
             )
 
     def _validate_model_exists(self) -> None:
-        """
-        Check if the specified model is available locally, or auto-select if none specified
-        
-        Raises:
-            ModelNotFoundError: If model not found or no models available
-        """
+        """Check the configured model is available; auto-select if unset."""
         try:
-            # If no model specified, try to auto-select from running models
             if not self.model:
                 self.model = self._auto_select_model()
                 if not self.model:
                     raise ModelNotFoundError(
-                        "No model specified in config and no running models found. "
-                        "Either specify a model in config.yaml or start a model with 'ollama run <model-name>'"
+                        "No model specified and no models found on the server. "
+                        "Run: ollama pull <model-name>"
                     )
-                logger.info(f"Auto-selected running model: {self.model}")
+                logger.info(f"Auto-selected model: {self.model}")
                 return
 
-            # Check if specified model is available
             response = requests.get(
                 f"{self.base_url.replace('/v1', '')}/api/tags",
-                timeout=5
+                timeout=5,
             )
             response.raise_for_status()
-            data = response.json()
-            available_models = [m["name"] for m in data.get("models", [])]
+            available = [m["name"] for m in response.json().get("models", [])]
 
-            if not available_models:
+            if not available:
                 raise ModelNotFoundError(
-                    "No models available on Ollama server. "
-                    "Pull a model first using: ollama pull <model-name>"
+                    "No models available. Run: ollama pull <model-name>"
                 )
 
-            # Check if our model is in the list (handle versioning like "phi3:latest")
             model_found = any(
-                self.model in model or model.startswith(self.model)
-                for model in available_models
+                self.model in m or m.startswith(self.model)
+                for m in available
             )
-
             if not model_found:
                 raise ModelNotFoundError(
-                    f"Model '{self.model}' not found locally. "
-                    f"Available models: {', '.join(available_models)}. "
-                    f"Pull it using: ollama pull {self.model}"
+                    f"Model '{self.model}' not found. "
+                    f"Available: {', '.join(available)}. "
+                    f"Run: ollama pull {self.model}"
                 )
 
-            logger.info(f"Model '{self.model}' is available locally")
+            logger.info(f"Model '{self.model}' confirmed available")
 
         except requests.RequestException as e:
             raise OllamaConnectionError(f"Error checking model availability: {e}")
 
     def _auto_select_model(self) -> Optional[str]:
-        """
-        Auto-select a model from currently running models
-        
-        Returns:
-            str: Name of the selected model, or None if no running models
-        """
+        """Return the first running model, or first available model."""
         try:
-            # Check running models first
-            response = requests.get(
-                f"{self.base_url.replace('/v1', '')}/api/ps",
-                timeout=5
-            )
-            response.raise_for_status()
-            data = response.json()
-            running_models = [m["name"] for m in data.get("models", [])]
-            
-            if running_models:
-                # Return the first running model
-                return running_models[0]
-            
-            # Fall back to available models if none are running
-            response = requests.get(
-                f"{self.base_url.replace('/v1', '')}/api/tags",
-                timeout=5
-            )
-            response.raise_for_status()
-            data = response.json()
-            available_models = [m["name"] for m in data.get("models", [])]
-            
-            if available_models:
-                # Return the first available model
-                return available_models[0]
-                
+            for endpoint in ("/api/ps", "/api/tags"):
+                resp = requests.get(
+                    f"{self.base_url.replace('/v1', '')}{endpoint}",
+                    timeout=5,
+                )
+                resp.raise_for_status()
+                models = [m["name"] for m in resp.json().get("models", [])]
+                if models:
+                    return models[0]
         except requests.RequestException:
-            pass  # Ignore errors, will return None
-            
+            pass
         return None
 
-    def _build_base_url(self, host: Optional[str]) -> Optional[str]:
-        """
-        Build a valid Ollama base URL from a host string.
-
-        Args:
-            host: Ollama host (e.g. http://localhost:11434)
-
-        Returns:
-            str: Ollama API base URL (e.g. http://localhost:11434/v1)
-        """
-        if not host:
-            return None
-
-        host = host.rstrip('/')
-        if host.endswith('/v1'):
-            return host
-        return f"{host}/v1"
+    # -----------------------------------------------------------------------
+    # Public API
+    # -----------------------------------------------------------------------
 
     def chat_completion(self, content: Union[str, Dict, List[Dict]]) -> str:
         """
-        Send a message to the model and get a response.
-        Supports both simple strings and multi-turn conversations.
-        
+        Send a message to the model and return its response.
+
         Args:
-            content: Can be one of:
-                - str: Simple user message (wrapped as {"role": "user", "content": "..."})
-                - dict: Single message with "role" and "content" keys
-                - list: List of message dicts for multi-turn conversations
-                
+            content: str (simple prompt), dict (single message), or
+                     list of message dicts (multi-turn conversation)
+
         Returns:
-            str: The model's response
-            
+            str: Model response text
+
         Raises:
-            OllamaError: If the API call fails
-            
-        Examples:
-            # Simple message
-            response = ollama.chat_completion("What is AI?")
-            
-            # Multi-turn conversation
-            messages = [
-                {"role": "system", "content": "You are a helpful assistant."},
-                {"role": "user", "content": "What is AI?"},
-                {"role": "assistant", "content": "AI is..."},
-                {"role": "user", "content": "Tell me more."}
-            ]
-            response = ollama.chat_completion(messages)
+            OllamaError: On API failure
         """
         try:
-            # Normalize content to messages list
             if isinstance(content, str):
-                # Simple string: wrap as user message
                 messages = [{"role": "user", "content": content}]
             elif isinstance(content, dict):
-                # Single message dict: wrap in list
                 messages = [content]
             elif isinstance(content, list):
-                # Already a list of messages
                 messages = content
             else:
                 raise OllamaError(
-                    f"Invalid content type. Expected str, dict, or list, got {type(content)}"
+                    f"Invalid content type {type(content)}. "
+                    "Expected str, dict, or list."
                 )
-            
+
             logger.info(f"Sending {len(messages)} message(s) to model: {self.model}")
             response = self.client.chat.completions.create(
                 model=self.model,
@@ -253,5 +222,8 @@ class OllamaClient:
             result = response.choices[0].message.content
             logger.info("Successfully received response from model")
             return result
+
+        except OllamaError:
+            raise
         except Exception as e:
-            raise OllamaError(f"Error calling model: {e}")
+            raise OllamaError(f"Error calling model '{self.model}': {e}")

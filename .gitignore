@@ -9,6 +9,7 @@ __pycache__/
 # Configuration with sensitive data
 config.yaml
 .env
+logs/*
 *.env.*
 .env.local
 

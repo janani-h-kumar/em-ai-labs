@@ -7,17 +7,24 @@ and production debugging.
 
 import json
 import logging
+import sys
 import uuid
 import contextvars
-from datetime import datetime
+import os
+import socket
 from typing import Optional, Dict, Any
+from datetime import datetime, timezone
+from logging.handlers import RotatingFileHandler
+
+SERVICE_NAME = "em-ai-labs"
+HOSTNAME = socket.gethostname()
+ENVIRONMENT = os.getenv("ENV", "dev")
 
 # Context variable for request correlation across async/threaded calls
 correlation_id: contextvars.ContextVar[str] = contextvars.ContextVar(
     'correlation_id',
-    default=str(uuid.uuid4())
+    default=None
 )
-
 
 class StructuredFormatter(logging.Formatter):
     """
@@ -39,9 +46,13 @@ class StructuredFormatter(logging.Formatter):
             "timestamp": datetime.utcnow().isoformat(),
             "level": record.levelname,
             "logger": record.name,
+            "event": record.msg,
             "message": record.getMessage(),
-            "correlation_id": correlation_id.get(),
-            "service": "em-ai-labs",
+            "correlation_id": get_correlation_id(),
+            "log_version": 1,
+            "service": SERVICE_NAME,
+            "environment": ENVIRONMENT,
+            "host": HOSTNAME,            
         }
         
         # Include extra fields if present
@@ -56,6 +67,14 @@ class StructuredFormatter(logging.Formatter):
         return json.dumps(log_data, default=str)
 
 
+def get_correlation_id() -> str:
+    cid = correlation_id.get()
+    if cid is None:
+        cid = str(uuid.uuid4())
+        correlation_id.set(cid)
+    return cid
+
+
 def setup_structured_logging(log_level: str = "INFO") -> None:
     """
     Initialize structured JSON logging for the application.
@@ -67,21 +86,28 @@ def setup_structured_logging(log_level: str = "INFO") -> None:
         from src.utils.logging_utils import setup_structured_logging
         setup_structured_logging("DEBUG")
     """
-    handler = logging.StreamHandler()
-    handler.setFormatter(StructuredFormatter())
-    
+    console_handler = logging.StreamHandler(sys.stdout)
+    console_handler.setFormatter(StructuredFormatter())
+
+    file_handler = RotatingFileHandler(
+        "logs/orchestrator.log",
+        maxBytes=10 * 1024 * 1024,
+        backupCount=5
+    )
+    file_handler.setFormatter(StructuredFormatter())
+
     root_logger = logging.getLogger()
     root_logger.setLevel(getattr(logging, log_level.upper(), logging.INFO))
-    
+       
     # Remove existing handlers to avoid duplicates
     for h in root_logger.handlers[:]:
         root_logger.removeHandler(h)
     
-    root_logger.addHandler(handler)
+    root_logger.addHandler(console_handler)
+    root_logger.addHandler(file_handler)    
     
     logger = logging.getLogger(__name__)
     logger.info("Structured logging initialized", extra={"extra_data": {"level": log_level}})
-
 
 def set_correlation_id(request_id: Optional[str] = None) -> str:
     """
@@ -102,11 +128,6 @@ def set_correlation_id(request_id: Optional[str] = None) -> str:
         request_id = str(uuid.uuid4())
     correlation_id.set(request_id)
     return request_id
-
-
-def get_correlation_id() -> str:
-    """Get current correlation ID."""
-    return correlation_id.get()
 
 
 def log_with_context(

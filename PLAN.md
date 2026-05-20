@@ -278,3 +278,14 @@ Conversation Store (if enabled) [Phase 1 - in-memory only]
 - **Learning-focused** — User will write agents incrementally; architecture supports this
 - **Persistence optional** — Default in-memory for Phase 1
 - **YAML configuration** — More extensible than JSON for future features
+
+## Next steps (not in these files)
+
+| Priority | What | Why |
+|----------|------|-----|
+| High | Add `Dockerfile` + `docker-compose.yml` | Enterprise teams won't hand-install Ollama |
+| High | Add `.github/workflows/ci.yml` | Tests must run automatically on every commit |
+| Medium | Install as a package (`pip install -e .`) | Eliminates all `sys.path.insert()` hacks |
+| Medium | Add spaCy to `requirements.txt` | Enables proper NER in `extract_city()` |
+| Medium | Track `configs/config.json` personal finance data | Should not be in this repo |
+| Low | Add `Makefile` or `setup.sh` (Linux/Mac) | `setup.ps1` is Windows-only |
