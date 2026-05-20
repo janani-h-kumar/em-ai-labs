@@ -12,6 +12,8 @@ config.yaml
 logs/*
 *.env.*
 .env.local
+configs/credentials.json
+configs/token.json
 
 # IDE
 .vscode/
