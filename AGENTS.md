@@ -279,10 +279,7 @@ import sys
 from pathlib import Path
 from typing import Optional, Dict, Any
 
-# 2. Path setup
-sys.path.insert(0, str(Path(__file__).parent.parent))
-
-# 3. Local imports
+# 2. Local imports
 from providers.ollama_provider import (
     ConfigManager,
     OllamaClient,

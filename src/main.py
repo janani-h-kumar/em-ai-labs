@@ -6,10 +6,6 @@ import logging
 import sys
 from pathlib import Path
 from typing import List, Dict, Type, Callable, Any, Optional
-
-# Add src to path for imports (until the package is installed via pip install -e .)
-sys.path.insert(0, str(Path(__file__).parent.parent))
-
 from src.utils.config_loader import ConfigManager
 from src.utils.logging_utils import setup_structured_logging, set_correlation_id
 from src.runtimes.runtime_factory import RuntimeFactory
