@@ -10,10 +10,19 @@ import requests
 from typing import List, Dict, Optional
 from dataclasses import dataclass
 from src.middleware.retry import retry_with_backoff
+from pydantic import BaseModel, Field
+from src.tools.base_tool import BaseTool
+from src.utils.config_loader import ConfigManager
 
 logger = logging.getLogger(__name__)
 
+# --- 1. Schema Input Definition ---
+class WebSearchInput(BaseModel):
+    query: str = Field(
+        description="The web search query string, e.g., 'latest space exploration news'"
+    )
 
+# Custom Exceptions
 class WebSearchError(Exception):
     """Base exception for web search errors."""
     pass
@@ -32,21 +41,13 @@ class SearchResult:
     snippet: str
 
 
+# --- 2. The Core API Client (Pure Data Fetcher) ---
 class WebSearchClient:
     """
     Web search client using DuckDuckGo (free, no API key required).
     
     DuckDuckGo provides free web search via their unofficial API.
-    Note: May have rate limits; for production, consider paid alternatives:
-    - SerpAPI (reliable, supports 100+ search engines)
-    - Bing Search API (reliable, Microsoft backed)
-    - Google Custom Search (reliable, Google backed)
-    
-    Example:
-        client = WebSearchClient()
-        results = client.search("Python best practices", num_results=3)
-        for result in results:
-            print(f"{result.title}: {result.snippet}")
+    Note: May have rate limits; for production, consider paid alternatives.
     """
     
     def __init__(self):
@@ -61,24 +62,6 @@ class WebSearchClient:
         query: str,
         num_results: int = 5
     ) -> List[SearchResult]:
-        """
-        Execute web search query.
-        
-        Args:
-            query: Search query string (non-empty)
-            num_results: Number of results to return (1-10, default 5)
-        
-        Returns:
-            List of SearchResult objects containing title, url, snippet
-        
-        Raises:
-            ValueError: If query is invalid
-            WebSearchExecutionError: If search fails
-        
-        Example:
-            results = client.search("Python async programming", num_results=3)
-            # Returns: [SearchResult(title="...", url="...", snippet="..."), ...]
-        """
         if not query or not isinstance(query, str) or not query.strip():
             raise ValueError("Query must be a non-empty string")
         
@@ -86,7 +69,6 @@ class WebSearchClient:
         num_results = min(max(num_results, 1), 10)
         
         try:
-            # DuckDuckGo API parameters
             params = {
                 "q": query,
                 "format": "json",
@@ -106,14 +88,12 @@ class WebSearchClient:
             data = response.json()
             results = []
             
-            # Extract results from DuckDuckGo response
             for item in data.get("Results", [])[:num_results]:
                 result = SearchResult(
                     title=item.get("Title", ""),
                     url=item.get("FirstURL", ""),
                     snippet=item.get("Text", "")
                 )
-                # Only include results with both title and URL
                 if result.title and result.url:
                     results.append(result)
             
@@ -135,14 +115,6 @@ class WebSearchClient:
         query: str,
         num_results: int = 5
     ) -> Dict[str, List[Dict[str, str]]]:
-        """
-        Execute web search and return results as dictionaries.
-        
-        Useful for JSON serialization or tool integration.
-        
-        Returns:
-            Dict with "results" key containing list of result dicts
-        """
         results = self.search(query, num_results)
         return {
             "results": [
@@ -154,3 +126,26 @@ class WebSearchClient:
                 for r in results
             ]
         }
+
+
+# --- 3. The LangChain Framework Agent Tool Wrapper ---
+class WebSearchTool(BaseTool):
+    """LangChain integration interface for the Web Search Client."""
+    name = "web_search"
+    description = "Search the web. Input: query string. Output: titles, URLs, snippets."
+    args_schema = WebSearchInput
+
+    def __init__(self, config_manager: ConfigManager):
+        # Pass configuration upward to satisfy abstract BaseTool contract
+        super().__init__(config_manager)
+        # Instantiate the localized network data client once during setup
+        self.client = WebSearchClient()
+
+    def _run(self, *args, **kwargs) -> str:
+        # Pull parameter safely from framework arguments
+        query = kwargs.get("query") or (args[0] if args else None)
+        if not query:
+            raise ValueError("Query parameter is required.")
+            
+        # Execute search and turn structural results into a string format for LLM context
+        return str(self.client.search_as_dict(query=query, num_results=3))

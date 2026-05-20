@@ -1,18 +1,11 @@
 """
 Enterprise agent manager with runtime orchestration and tooling.
-
-Changes from original:
-- Removed `from dataclasses import Field` — this import was unused and
-  incorrect (dataclasses.Field is an internal type, not the same as
-  pydantic.Field used below). It caused a linter error and confused readers.
-- Removed duplicate sys.path.insert — now handled cleanly via package install.
-- All other logic is unchanged.
 """
 
 import logging
 import sys
 from pathlib import Path
-from typing import Dict, Any, Optional, List
+from typing import List, Dict, Type, Callable, Any, Optional
 
 # Add src to path for imports (until the package is installed via pip install -e .)
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -22,8 +15,8 @@ from src.utils.logging_utils import setup_structured_logging, set_correlation_id
 from src.runtimes.runtime_factory import RuntimeFactory
 from src.runtimes.base_runtime import BaseRuntime
 from src.router import MessageRouter
-from src.tools.weather_tool import WeatherClient
-from src.tools.web_search_tool import WebSearchClient
+from src.tools.weather_tool import WeatherClient, WeatherInput
+from src.tools.web_search_tool import WebSearchClient, WebSearchInput
 from langchain_core.tools import Tool
 from pydantic import BaseModel, Field
 
@@ -31,16 +24,78 @@ from pydantic import BaseModel, Field
 setup_structured_logging()
 logger = logging.getLogger(__name__)
 
-class WeatherInput(BaseModel):
-    city: str = Field(
-        description="The name of the city to look up the weather for, e.g., 'New York'"
-    )
 
-class SearchInput(BaseModel):
-    query: str = Field(
-        description="The web search query string, e.g., 'latest space exploration news'"
-    )
+# --- Generic Tool Registry Framework ---
+class ToolConfig:
+    """A clean wrapper to define what a tool needs to initialize."""
+    def __init__(
+        self, 
+        name: str, 
+        description: str, 
+        args_schema: Type[BaseModel], 
+        factory_fn: Callable[[Any], Callable[..., Any]]
+    ):
+        self.name = name
+        self.description = description
+        self.args_schema = args_schema
+        self.factory_fn = factory_fn
 
+
+class ToolManager:
+    """Handles registry and clean runtime initialization of external agent tools."""
+    def __init__(self, config_manager: ConfigManager):
+        self.config_manager = config_manager
+        
+        # Central Registry: Adding new tools down the road happens strictly here
+        self._tool_registry: List[ToolConfig] = [
+            ToolConfig(
+                name="weather",
+                description="Get current weather for a city. Input: city name. Output: temperature, condition, humidity.",
+                args_schema=WeatherInput,
+                factory_fn=lambda manager: lambda *args, **kwargs: str(
+                    WeatherClient(manager.config_manager).get_temperature(
+                        city=kwargs.get("city") or (args[0] if args else None)
+                    )
+                )
+            ),
+            ToolConfig(
+                name="web_search",
+                description="Search the web. Input: query string. Output: titles, URLs, snippets.",
+                args_schema=WebSearchInput,
+                factory_fn=lambda manager: lambda *args, **kwargs: str(
+                    WebSearchClient().search_as_dict(
+                        query=kwargs.get("query") or (args[0] if args else None),
+                        num_results=3,
+                    )
+                )
+            ),
+        ]
+
+    def initialize_tools(self) -> List[Tool]:
+        """Loops through registry to instantiate LangChain-compatible executable tools."""
+        tools: List[Tool] = []
+
+        for config in self._tool_registry:
+            try:
+                executable_func = config.factory_fn(self)
+                
+                tool = Tool(
+                    name=config.name,
+                    func=executable_func,
+                    description=config.description,
+                    args_schema=config.args_schema,
+                )
+                tools.append(tool)
+                logger.info(f"Tool '{config.name}' loaded successfully")
+                
+            except Exception as e:
+                logger.warning(f"Failed to load tool '{config.name}': {e}")
+
+        logger.info(f"Total tools initialized generic registry: {len(tools)}")
+        return tools
+
+
+# --- Core Orchestrator ---
 
 class AgentManager:
     """
@@ -48,14 +103,10 @@ class AgentManager:
 
     Features:
     - Config-driven runtime selection (LangChain, custom)
-    - Tool initialisation and integration
+    - Tool initialisation and integration via generic ToolManager
     - Message routing and processing
     - Health checks and telemetry
     - Graceful error handling
-
-    Example:
-        manager = AgentManager()
-        response = manager.handle("What's the weather in NYC?")
     """
 
     def __init__(self, config_path: Optional[str] = None):
@@ -69,8 +120,10 @@ class AgentManager:
             self.config_manager = ConfigManager(config_path)
             self.config_manager.validate_startup()
 
-            logger.info("Initialising tools...")
-            self.tools = self._initialize_tools()
+            logger.info("Initialising tools via Generic ToolManager...")
+            # Here is the clean integration swap:
+            self.tool_manager = ToolManager(self.config_manager)
+            self.tools = self.tool_manager.initialize_tools()
 
             runtime_type = self.config_manager.get(
                 "runtime.orchestration", default="langchain"
@@ -90,47 +143,6 @@ class AgentManager:
         except Exception as e:
             logger.error(f"Failed to initialise AgentManager: {e}")
             raise
-
-    def _initialize_tools(self) -> List[Tool]:
-        tools: List[Tool] = []
-
-        try:
-            weather_client = WeatherClient(self.config_manager)
-            weather_tool = Tool(
-                name="weather",
-                func=lambda *args, **kwargs: str(
-                    weather_client.get_temperature(
-                        city=kwargs.get("city") or (args[0] if args else None)
-                    )
-                ),
-                description="Get current weather for a city. Input: city name. Output: temperature, condition, humidity."
-                args_schema=WeatherInput,
-            )
-            tools.append(weather_tool)
-            logger.info("Weather tool loaded")
-        except Exception as e:
-            logger.warning(f"Failed to load weather tool: {e}")
-
-        try:
-            search_client = WebSearchClient()
-            search_tool = Tool(
-                name="web_search",
-                func=lambda *args, **kwargs: str(
-                    search_client.search_as_dict(
-                        query=kwargs.get("query") or (args[0] if args else None),
-                        num_results=3,
-                    )
-                ),
-                description="Search the web. Input: query string. Output: titles, URLs, snippets."
-                args_schema=SearchInput,
-            )
-            tools.append(search_tool)
-            logger.info("Web search tool loaded")
-        except Exception as e:
-            logger.warning(f"Failed to load web search tool: {e}")
-
-        logger.info(f"Total tools initialised: {len(tools)}")
-        return tools
 
     def handle(self, message: str) -> str:
         request_id = set_correlation_id()
