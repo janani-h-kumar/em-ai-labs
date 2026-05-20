@@ -54,6 +54,9 @@ class OllamaConfigError(OllamaError):
 
 class OllamaClient:
     """Manages interaction with a local Ollama server via the OpenAI-compat API."""
+    @property
+    def model_name(self):
+        return self.model
 
     def __init__(self, config_manager):
         """
@@ -68,7 +71,7 @@ class OllamaClient:
             ModelNotFoundError: If specified model is unavailable
         """
         self.config = config_manager
-        self.host = config_manager.get("env.OLLAMA_BASE_URL")
+        self.host = config_manager.get("env.OLLAMA_BASE_URL") or "http://localhost:11434"
         self.base_url = self._build_base_url(self.host)
 
         if not self.base_url:
@@ -227,3 +230,5 @@ class OllamaClient:
             raise
         except Exception as e:
             raise OllamaError(f"Error calling model '{self.model}': {e}")
+
+Client = OllamaClient

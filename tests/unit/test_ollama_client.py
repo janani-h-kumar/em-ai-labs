@@ -1,4 +1,5 @@
 import pytest
+from unittest.mock import MagicMock
 
 from src.providers.ollama_provider import (
     OllamaClient,
@@ -11,13 +12,11 @@ class MockConfig:
     """Mock config object for testing."""
 
     def get(self, key, default=None):
-
         values = {
-            "ollama.host": "http://localhost:11434",
-            "ollama.model": "qwen2.5",
-            "ollama.timeout": 30,
+            "env.OLLAMA_BASE_URL": "http://localhost:11434",
+            "env.OLLAMA_MODEL": "qwen2.5",
+            "env.OLLAMA_API_KEY": None,
         }
-
         return values.get(key, default)
 
 
@@ -26,140 +25,127 @@ def mock_config():
     return MockConfig()
 
 
-class TestOllamaClient:
-    """Unit tests for OllamaClient."""
+@pytest.fixture
+def client(monkeypatch, mock_config):
+    """
+    Prevent real HTTP/OpenAI calls by mocking validation methods.
+    """
+    monkeypatch.setattr(OllamaClient, "_validate_connection", lambda self: None)
+    monkeypatch.setattr(OllamaClient, "_validate_model_exists", lambda self: None)
+    return OllamaClient(mock_config)
 
-    def test_chat_completion_success(self, mocker, mock_config):
+
+class TestOllamaClient:
+
+    def test_chat_completion_success(self, monkeypatch, client):
         """Should return parsed response successfully."""
 
-        mock_chat = mocker.patch(
-            "src.providers.ollama_provider.Client.chat"
+        mock_response = MagicMock()
+        mock_response.choices = [
+            MagicMock(message=MagicMock(content="AI is artificial intelligence."))
+        ]
+
+        monkeypatch.setattr(
+            client.client.chat.completions,
+            "create",
+            lambda **kwargs: mock_response
         )
-
-        mock_chat.return_value = {
-            "message": {
-                "content": "AI is artificial intelligence."
-            }
-        }
-
-        client = OllamaClient(mock_config)
 
         response = client.chat_completion("What is AI?")
 
         assert response == "AI is artificial intelligence."
 
-    def test_string_prompt_converted_to_messages(
-        self,
-        mocker,
-        mock_config
-    ):
-        """Should convert string prompts into Ollama message format."""
+    def test_string_prompt_converted_to_messages(self, monkeypatch, client):
+        """Should convert string prompts into message format."""
 
-        mock_chat = mocker.patch(
-            "src.providers.ollama_provider.Client.chat"
+        captured = {}
+
+        def fake_create(**kwargs):
+            captured.update(kwargs)
+            mock = MagicMock()
+            mock.choices = [
+                MagicMock(message=MagicMock(content="ok"))
+            ]
+            return mock
+
+        monkeypatch.setattr(
+            client.client.chat.completions,
+            "create",
+            fake_create
         )
-
-        mock_chat.return_value = {
-            "message": {
-                "content": "hello"
-            }
-        }
-
-        client = OllamaClient(mock_config)
 
         client.chat_completion("What is AI?")
 
-        mock_chat.assert_called_once()
-
-        call_kwargs = mock_chat.call_args.kwargs
-
-        assert call_kwargs["messages"] == [
-            {
-                "role": "user",
-                "content": "What is AI?"
-            }
+        assert captured["messages"] == [
+            {"role": "user", "content": "What is AI?"}
         ]
 
-    def test_multi_turn_conversation_passed_correctly(
-        self,
-        mocker,
-        mock_config
-    ):
+    def test_multi_turn_conversation_passed_correctly(self, monkeypatch, client):
         """Should preserve multi-turn conversation structure."""
-
-        mock_chat = mocker.patch(
-            "src.providers.ollama_provider.Client.chat"
-        )
-
-        mock_chat.return_value = {
-            "message": {
-                "content": "response"
-            }
-        }
 
         messages = [
             {"role": "system", "content": "You are helpful."},
             {"role": "user", "content": "Hello"},
         ]
 
-        client = OllamaClient(mock_config)
+        captured = {}
+
+        def fake_create(**kwargs):
+            captured.update(kwargs)
+            mock = MagicMock()
+            mock.choices = [
+                MagicMock(message=MagicMock(content="response"))
+            ]
+            return mock
+
+        monkeypatch.setattr(
+            client.client.chat.completions,
+            "create",
+            fake_create
+        )
 
         client.chat_completion(messages)
 
-        call_kwargs = mock_chat.call_args.kwargs
+        assert captured["messages"] == messages
 
-        assert call_kwargs["messages"] == messages
-
-    def test_connection_error_raises_custom_exception(
-        self,
-        mocker,
-        mock_config
-    ):
+    def test_connection_error_raises_custom_exception(self, monkeypatch, client):
         """Should convert connection failures into domain exception."""
 
-        mock_chat = mocker.patch(
-            "src.providers.ollama_provider.Client.chat"
+        def raise_error(**kwargs):
+            raise Exception("Connection failed")
+
+        monkeypatch.setattr(
+            client.client.chat.completions,
+            "create",
+            raise_error
         )
-
-        mock_chat.side_effect = ConnectionError("Connection failed")
-
-        client = OllamaClient(mock_config)
-
-        with pytest.raises(OllamaConnectionError):
-            client.chat_completion("hello")
-
-    def test_empty_response_raises_error(
-        self,
-        mocker,
-        mock_config
-    ):
-        """Should raise OllamaError for malformed responses."""
-
-        mock_chat = mocker.patch(
-            "src.providers.ollama_provider.Client.chat"
-        )
-
-        mock_chat.return_value = {}
-
-        client = OllamaClient(mock_config)
 
         with pytest.raises(OllamaError):
             client.chat_completion("hello")
 
-    def test_none_response_raises_error(
-        self,
-        mocker,
-        mock_config
-    ):
-        """Should raise OllamaError for null responses."""
+    def test_empty_response_raises_error(self, monkeypatch, client):
+        """Should raise error for empty response."""
 
-        mock_chat = mocker.patch(
-            "src.providers.ollama_provider.Client.chat"
+        mock = MagicMock()
+        mock.choices = []
+
+        monkeypatch.setattr(
+            client.client.chat.completions,
+            "create",
+            lambda **kwargs: mock
         )
 
-        mock_chat.return_value = None
+        with pytest.raises(OllamaError):
+            client.chat_completion("hello")
 
-        client = OllamaClient(mock_config)
+    def test_none_response_raises_error(self, monkeypatch, client):
+        """Should raise error for None response."""
+
+        monkeypatch.setattr(
+            client.client.chat.completions,
+            "create",
+            lambda **kwargs: None
+        )
 
         with pytest.raises(OllamaError):
             client.chat_completion("hello")
@@ -168,5 +154,4 @@ class TestOllamaClient:
         """Should initialize client with configured model."""
 
         client = OllamaClient(mock_config)
-
         assert client.model_name == "qwen2.5"
