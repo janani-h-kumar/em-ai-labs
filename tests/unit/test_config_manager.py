@@ -1,89 +1,138 @@
 import pytest
 
-from src.providers.ollama_provider import (
+from src.utils.config_loader import (
     ConfigManager,
     ConfigError,
+    ConfigValidationError,
 )
 
 
-class TestConfigManager:
-    """Unit tests for ConfigManager."""
+# -------------------------------------------------
+# Helper: create valid base config
+# -------------------------------------------------
+VALID_CONFIG = """
+runtime:
+  orchestration: langchain
 
-    def test_load_valid_config(self, tmp_path):
-        """Should load valid YAML config successfully."""
+env:
+  OLLAMA_API_KEY: test-key
+  OLLAMA_BASE_URL: http://localhost:11434
+  OPENWEATHER_API_KEY: test-key
+  OPENWEATHER_BASE_URL: http://api.weather.com
+"""
 
-        config_file = tmp_path / "config.yaml"
 
-        config_file.write_text("""
-ollama:
-  host: http://localhost:11434
-  model: qwen2.5
+# -------------------------------------------------
+# 1. Missing config file → SHOULD RAISE
+# -------------------------------------------------
+def test_missing_config_file_raises(tmp_path):
+    missing_path = tmp_path / "does_not_exist.yaml"
+
+    with pytest.raises(ConfigError):
+        ConfigManager(str(missing_path))
+
+
+# -------------------------------------------------
+# 2. Invalid YAML → SHOULD RAISE
+# -------------------------------------------------
+def test_invalid_yaml_raises(tmp_path):
+    bad_file = tmp_path / "bad.yaml"
+    bad_file.write_text("""
+    runtime:
+      orchestration: langchain
+        broken_indent: true
+    """)
+
+    with pytest.raises(ConfigError):
+        ConfigManager(str(bad_file))
+
+
+# -------------------------------------------------
+# 3. Valid config loads correctly
+# -------------------------------------------------
+def test_valid_config_loads(tmp_path):
+    file = tmp_path / "config.yaml"
+    file.write_text(VALID_CONFIG)
+
+    cfg = ConfigManager(str(file))
+
+    assert cfg.get("runtime.orchestration") == "langchain"
+    assert "env" in cfg.get_all()
+
+
+# -------------------------------------------------
+# 4. get() returns default when missing key
+# -------------------------------------------------
+def test_get_returns_default(tmp_path):
+    file = tmp_path / "config.yaml"
+    file.write_text(VALID_CONFIG)
+
+    cfg = ConfigManager(str(file))
+
+    assert cfg.get("runtime.missing", "default") == "default"
+
+
+# -------------------------------------------------
+# 5. get_required() raises when missing
+# -------------------------------------------------
+def test_get_required_raises(tmp_path):
+    file = tmp_path / "config.yaml"
+    file.write_text(VALID_CONFIG)
+
+    cfg = ConfigManager(str(file))
+
+    with pytest.raises(ConfigValidationError):
+        cfg.get_required("runtime.missing")
+
+
+# -------------------------------------------------
+# 6. validate_startup passes for valid config
+# -------------------------------------------------
+def test_validate_startup_passes(tmp_path, monkeypatch):
+    file = tmp_path / "config.yaml"
+
+    file.write_text("""
+runtime:
+  orchestration: langchain
 """)
 
-        config = ConfigManager(str(config_file))
+    # IMPORTANT: set real env vars (this is how your system works)
+    monkeypatch.setenv("OLLAMA_API_KEY", "test-key")
+    monkeypatch.setenv("OLLAMA_BASE_URL", "http://localhost:11434")
+    monkeypatch.setenv("OPENWEATHER_API_KEY", "test-key")
+    monkeypatch.setenv("OPENWEATHER_BASE_URL", "http://api.weather.com")
 
-        assert config.get("ollama.host") == "http://localhost:11434"
-        assert config.get("ollama.model") == "qwen2.5"
+    cfg = ConfigManager(str(file))
 
-    def test_missing_config_file_raises_error(self):
-        """Should raise ConfigError for missing config file."""
+    # should NOT raise
+    cfg.validate_startup()
 
-        with pytest.raises(ConfigError):
-            ConfigManager("does_not_exist.yaml")
 
-    def test_invalid_yaml_raises_error(self, tmp_path):
-        """Should raise ConfigError for malformed YAML."""
-
-        config_file = tmp_path / "bad_config.yaml"
-
-        config_file.write_text("""
-ollama:
-  model: qwen2.5
-    invalid_indent
+# -------------------------------------------------
+# 7. validate_startup fails when required keys missing
+# -------------------------------------------------
+def test_validate_startup_fails(tmp_path):
+    file = tmp_path / "config.yaml"
+    file.write_text("""
+runtime:
+  orchestration: langchain
 """)
 
-        with pytest.raises(ConfigError):
-            ConfigManager(str(config_file))
+    cfg = ConfigManager(str(file))
 
-    def test_missing_key_returns_default(self, tmp_path):
-        """Should return default value for missing keys."""
+    with pytest.raises(ConfigValidationError):
+        cfg.validate_startup()
 
-        config_file = tmp_path / "config.yaml"
 
-        config_file.write_text("""
-ollama:
-  model: qwen2.5
-""")
+# -------------------------------------------------
+# 8. set() modifies in-memory config
+# -------------------------------------------------
+def test_set_updates_config(tmp_path):
+    file = tmp_path / "config.yaml"
+    file.write_text(VALID_CONFIG)
 
-        config = ConfigManager(str(config_file))
+    cfg = ConfigManager(str(file))
 
-        assert config.get("missing.key", "default") == "default"
+    cfg.set("runtime.orchestration", "custom")
 
-    def test_missing_required_key_raises(self, tmp_path):
-        """Should fail validation if required keys are missing."""
-
-        config_file = tmp_path / "config.yaml"
-
-        config_file.write_text("""
-ollama:
-  host: http://localhost:11434
-""")
-
-        with pytest.raises(ConfigError):
-            ConfigManager(str(config_file))
-
-    def test_environment_variable_substitution(self, tmp_path, monkeypatch):
-        """Should substitute environment variables correctly."""
-
-        monkeypatch.setenv("OLLAMA_MODEL", "llama3")
-
-        config_file = tmp_path / "config.yaml"
-
-        config_file.write_text("""
-ollama:
-  model: ${OLLAMA_MODEL}
-""")
-
-        config = ConfigManager(str(config_file))
-
-        assert config.get("ollama.model") == "llama3"
+    assert cfg.get("runtime.orchestration") == "custom"
