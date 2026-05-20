@@ -33,6 +33,7 @@ import base64
 import json
 import os
 import tempfile
+import logging
 from pathlib import Path
 from typing import Callable, Union
 
@@ -43,7 +44,7 @@ import fitz  # PyMuPDF
 # Load config (language-agnostic JSON)
 # ============================================================
 
-_CONFIG_PATH = Path(__file__).parent / "config.json"
+_CONFIG_PATH = Path(__file__).parent.parent.parent / "configs" / "vision_config.json"
 
 with open(_CONFIG_PATH, "r", encoding="utf-8") as _f:
     _CONFIG = json.load(_f)
@@ -55,6 +56,7 @@ _SUPPORTED_EXTENSIONS: set[str] = set(_CONFIG["supported_image_extensions"])
 # Type alias for clarity
 LLMCaller = Callable[[str, Union[str, None], Union[str, None]], str]
 
+logger = logging.getLogger(__name__)
 
 # ============================================================
 # PUBLIC ENTRY POINT
@@ -113,11 +115,11 @@ def _process_directory(dir_path: Path, llm_caller: LLMCaller) -> list[dict]:
 
     images = [f for f in all_files if f.suffix.lower() in _SUPPORTED_EXTENSIONS]
     pdfs   = [f for f in all_files if f.suffix.lower() == ".pdf"]
-    print(f"[vision_extractor] '{dir_path.name}/' — {len(images)} image(s), {len(pdfs)} PDF(s)")
+    logger.info(f"[vision_extractor] '{dir_path.name}/' — {len(images)} image(s), {len(pdfs)} PDF(s)")
 
     all_transactions = []
     for f in all_files:
-        print(f"  -> {f.name}")
+        logger.info(f"  -> {f.name}")
         if f.suffix.lower() == ".pdf":
             all_transactions.extend(_process_pdf(f, llm_caller))
         else:
@@ -144,25 +146,26 @@ def _process_pdf(pdf_path: Path, llm_caller: LLMCaller) -> list[dict]:
     doc = fitz.open(str(pdf_path))
     all_transactions = []
 
-    print(f"[vision_extractor] PDF '{pdf_path.name}' — {len(doc)} page(s)")
+    logger.info(f"[vision_extractor] PDF '{pdf_path.name}' — {len(doc)} page(s)")
 
+    prompt = _build_prompt()
+    
     for page_num, page in enumerate(doc, start=1):
         source_label = f"{pdf_path.name} — page {page_num}"
         text = page.get_text("text").strip()
 
         if len(text) > 100:
-            print(f"  -> Page {page_num}: text mode")
+            logger.info(f"  -> Page {page_num}: text mode")
             prompt = _build_prompt(extracted_text=text)
             raw = llm_caller(prompt, None, None)
         else:
-            print(f"  -> Page {page_num}: vision mode (scanned or image-only)")
+            logger.info(f"  -> Page {page_num}: vision mode (scanned or image-only)")
             pix = page.get_pixmap(dpi=150)
             tmp_fd, tmp_path = tempfile.mkstemp(suffix=".png")
             os.close(tmp_fd)
             try:
                 pix.save(tmp_path)
-                image_b64 = _encode_image(Path(tmp_path))
-                prompt = _build_prompt()
+                image_b64 = _encode_image(Path(tmp_path))                
                 raw = llm_caller(prompt, image_b64, "image/png")
             finally:
                 os.unlink(tmp_path)
@@ -245,12 +248,12 @@ def _parse_response(raw: str, source_file: str) -> list[dict]:
     try:
         transactions = json.loads(cleaned)
     except json.JSONDecodeError as e:
-        print(f"  [WARNING] JSON parse failed for '{source_file}': {e}")
-        print(f"  Response preview: {raw[:300]}")
+        logger.warning(f"  [WARNING] JSON parse failed for '{source_file}': {e}")
+        logger.info(f"  Response preview: {raw[:300]}")
         return []
 
     if not isinstance(transactions, list):
-        print(f"  [WARNING] Expected list, got {type(transactions).__name__} for '{source_file}'")
+        logger.warning(f"  [WARNING] Expected list, got {type(transactions).__name__} for '{source_file}'")
         return []
 
     for txn in transactions:

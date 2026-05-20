@@ -31,12 +31,10 @@ from pydantic import BaseModel, Field
 setup_structured_logging()
 logger = logging.getLogger(__name__)
 
-
 class WeatherInput(BaseModel):
     city: str = Field(
         description="The name of the city to look up the weather for, e.g., 'New York'"
     )
-
 
 class SearchInput(BaseModel):
     query: str = Field(
@@ -105,11 +103,7 @@ class AgentManager:
                         city=kwargs.get("city") or (args[0] if args else None)
                     )
                 ),
-                description=(
-                    "Get current weather for a city. "
-                    "Input: city name (e.g., 'New York'). "
-                    "Output: temperature, condition, humidity, pressure."
-                ),
+                description="Get current weather for a city. Input: city name. Output: temperature, condition, humidity."
                 args_schema=WeatherInput,
             )
             tools.append(weather_tool)
@@ -127,11 +121,7 @@ class AgentManager:
                         num_results=3,
                     )
                 ),
-                description=(
-                    "Search the web for information. "
-                    "Input: search query. "
-                    "Output: list of results with title, URL, and snippet."
-                ),
+                description="Search the web. Input: query string. Output: titles, URLs, snippets."
                 args_schema=SearchInput,
             )
             tools.append(search_tool)

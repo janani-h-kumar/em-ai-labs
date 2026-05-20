@@ -83,7 +83,7 @@ class LangChainRuntime(BaseRuntime):
     # Seconds before invoke() gives up waiting for the LLM.
     # Tune this to your model's typical latency + a generous buffer.
     INVOKE_TIMEOUT_SECONDS = 120
-
+    
     def __init__(
         self,
         config_manager: ConfigManager,
@@ -104,9 +104,10 @@ class LangChainRuntime(BaseRuntime):
                 base_url=ollama_base_url,
                 model=ollama_model,
                 temperature=0.2,
+                num_ctx=4096,           # explicit context window — prevents OOM on larger docs
+                stop=["Observation:", "Human:"],  # ReAct loop delimiters — prevents hallucination                
             )
 
-            # FIX: replaced llm.invoke("test") with HTTP ping
             self._verify_ollama_connection(ollama_base_url)
 
             if tools:

@@ -42,6 +42,7 @@ import os
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
+import logging
 
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
@@ -57,6 +58,8 @@ from googleapiclient.errors import HttpError
 _SCOPES = [
     "https://www.googleapis.com/auth/spreadsheets",
 ]
+
+logger = logging.getLogger(__name__)
 
 _CONFIG_DIR      = Path(__file__).parent.parent.parent / "config"
 _CREDENTIALS_PATH = _CONFIG_DIR / "credentials.json"
@@ -129,7 +132,7 @@ class SheetsClient:
         rows = [self._transaction_to_row(t) for t in transactions]
         self._append_rows(_TAB_TRANSACTIONS, rows)
 
-        print(f"[sheets_tool] Appended {len(rows)} transaction(s) to '{_TAB_TRANSACTIONS}'")
+        logger.info(f"Appended {len(rows)} transaction(s) to '{_TAB_TRANSACTIONS}'")
         return len(rows)
 
 
@@ -196,8 +199,8 @@ class SheetsClient:
             valueInputOption="USER_ENTERED",
             body={"values": [updated_row]},
         ).execute()
-
-        print(f"[sheets_tool] Updated row {row_index} in '{_TAB_TRANSACTIONS}'")
+        
+        logger.info(f"Updated row {row_index} in '{_TAB_TRANSACTIONS}'")
         return True
 
 
@@ -232,8 +235,8 @@ class SheetsClient:
         self._clear_tab(_TAB_SUMMARY)
         self._write_header(_TAB_SUMMARY, header)
         self._append_rows(_TAB_SUMMARY, rows)
-
-        print(f"[sheets_tool] Written {len(rows)} summary row(s) to '{_TAB_SUMMARY}'")
+        
+        logger.info(f"Written {len(rows)} summary row(s) to '{_TAB_SUMMARY}'")
 
 
     def read_summary(self) -> list[dict]:
@@ -289,7 +292,7 @@ class SheetsClient:
             )
             return result.get("values", [])
         except HttpError as e:
-            print(f"  [ERROR] Could not read tab '{tab_name}': {e}")
+            logger.error(f"  [ERROR] Could not read tab '{tab_name}': {e}")
             return []
 
 

@@ -1,0 +1,30 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Install dependencies
+        run: pip install -r requirements.txt
+
+      - name: Run tests (offline — mocked APIs)
+        run: pytest tests/ -v --tb=short
+
+      - name: Check for syntax errors
+        run: |
+          python -m py_compile src/main.py
+          python -m py_compile src/runtimes/langchain_runtime.py
+          python -m py_compile src/agents/weather_agent.py

@@ -14,6 +14,7 @@ logs/*
 .env.local
 configs/credentials.json
 configs/token.json
+PLAN.md
 
 # IDE
 .vscode/
