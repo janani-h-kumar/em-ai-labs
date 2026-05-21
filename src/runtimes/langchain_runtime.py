@@ -12,11 +12,10 @@ Changes from original:
   so nothing breaks in dev environments that skipped full deps.
 - invoke() timeout: added a configurable hard timeout so a hung local model
   cannot block the process indefinitely.
-- _verify_ollama_connection() no longer calls llm.invoke("test") on startup
-  for the same reason — replaced with HTTP ping.
 """
 
 import logging
+import threading
 import time
 from typing import List, Optional, Dict, Any
 
@@ -117,15 +116,16 @@ class LangChainRuntime(BaseRuntime):
                 logger.warning("No tools provided; agent executor not initialised.")
 
             logger.info(f"LangChainRuntime initialised with ChatOllama({ollama_model})")
+            if self.config_manager.get("runtime.warmup_enabled"):
+                threading.Thread(
+                    target=self._warmup_model,
+                    daemon=True
+                ).start()
 
         except Exception as e:
             msg = f"Failed to initialise LangChainRuntime: {e}"
             logger.error(msg)
             raise LangChainRuntimeInitError(msg)
-
-    # -----------------------------------------------------------------------
-    # Connection verification — FIX
-    # -----------------------------------------------------------------------
 
     @retry_with_backoff(
         max_retries=3,
@@ -140,14 +140,22 @@ class LangChainRuntime(BaseRuntime):
         Original used self.llm.invoke("test") which ran real inference on
         every startup and health check.
         """
+
         url = base_url.rstrip("/") + "/api/tags"
         try:
+            start_time = time.perf_counter()
             response = requests.get(url, timeout=5)
             if response.status_code != 200:
                 raise LangChainRuntimeInitError(
                     f"Ollama returned HTTP {response.status_code} at {url}"
                 )
             logger.info("Ollama connection verified via /api/tags")
+            logger.info(
+                "Ollama verification completed",
+                extra={
+                    "duration_sec": round(time.perf_counter() - start_time, 2)
+                }
+            )
         except requests.ConnectionError:
             raise LangChainRuntimeInitError(
                 f"Cannot reach Ollama at {base_url}. Is it running? Try: ollama serve"
@@ -156,6 +164,16 @@ class LangChainRuntime(BaseRuntime):
             raise LangChainRuntimeInitError(
                 f"Ollama at {base_url} did not respond within 5s."
             )
+
+    def _warmup_model(self):
+        try:
+            logger.info("Starting model warmup")
+            self.llm.invoke("ping")
+            logger.info("Model warmup complete")
+
+        except Exception as e:
+            logger.warning(f"Warmup failed: {e}")
+
 
     # -----------------------------------------------------------------------
     # Agent setup
@@ -250,7 +268,15 @@ class LangChainRuntime(BaseRuntime):
 
     def set_tools(self, tools: List[Tool]) -> None:
         super().set_tools(tools)
+        setup_agent_duration = time.perf_counter()
         self.agent_executor = self._setup_agent() if tools else None
+        logger.info(
+            "Agent compiled",
+            extra={
+                "tool_count": len(self.tools),
+                "compile_duration_ms": round((time.perf_counter() - setup_agent_duration) * 1000, 2)
+            }
+        )
 
     def health_check(self) -> Dict[str, Any]:
         """

@@ -3,6 +3,7 @@ Enterprise agent manager with runtime orchestration and tooling.
 """
 
 import logging
+import time
 from pathlib import Path
 from typing import List, Dict, Type, Callable, Any, Optional
 from src.utils.config_loader import ConfigManager
@@ -195,6 +196,7 @@ class AgentManager:
 
 
 def run_interactive_chat():
+    
     """Run interactive chat loop with agent system."""
     print("\n" + "="*50)
     print("AI Lab — Agent Orchestration System")
@@ -202,7 +204,15 @@ def run_interactive_chat():
     print("Type 'exit' to quit, 'help' for commands\n")
 
     try:
+        startup_start = time.perf_counter()
         manager = AgentManager()
+        logger.info(
+    "Application startup complete",
+    extra={
+        "startup_duration_sec":
+            round(time.perf_counter() - startup_start, 2)
+    }
+)
     except Exception as e:
         print(f"Failed to initialise: {e}")
         return

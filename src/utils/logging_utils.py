@@ -49,7 +49,6 @@ class StructuredFormatter(logging.Formatter):
             "timestamp": datetime.utcnow().isoformat(),
             "level": record.levelname,
             "logger": record.name,
-            "event": record.msg,
             "message": record.getMessage(),
             "correlation_id": get_correlation_id(),
             "log_version": 1,
