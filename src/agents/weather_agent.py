@@ -1,12 +1,3 @@
-"""
-Weather agent using BaseAgent standardisation.
-
-Refactor goals:
-- Make dependency injection possible (testable)
-- Remove need for __new__ hacks in tests
-- Preserve existing production behavior
-"""
-
 import logging
 import re
 from pathlib import Path
@@ -71,6 +62,7 @@ class WeatherAgent(BaseAgent):
         logger.info("Initializing WeatherAgent...")
 
         try:
+            # Standardize on base_llm_provider
             self.base_llm_provider = (
                 self._external_base_llm_provider
                 or BaseLLMProvider(self.config_manager)
@@ -82,12 +74,10 @@ class WeatherAgent(BaseAgent):
             )
 
             logger.info(
-                f"Ollama ready (model={getattr(self.base_llm_provider, 'model', None)})"
+                f"LLM Provider ready (model={getattr(self.base_llm_provider, 'model_name', 'unknown')})"
             )
             logger.info("Weather client ready")
 
-        #except (OllamaConfigError, OllamaConnectionError, WeatherConfigError) as e:
-        #    raise WeatherAgentInitError(str(e))
         except Exception as e:
             raise WeatherAgentInitError(f"Unexpected init error: {e}")
 
@@ -120,7 +110,6 @@ class WeatherAgent(BaseAgent):
         }
 
         candidates = re.findall(r'\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)\b', message)
-
         filtered = [c for c in candidates if c.lower() not in filler]
 
         if filtered:
@@ -137,6 +126,7 @@ class WeatherAgent(BaseAgent):
             raise ValueError("City must be non-empty")
 
         try:
+            # Step 1: Use the injected weather client tool
             weather = self.weather_client.get_temperature(city.strip())
 
             prompt = (
@@ -147,16 +137,19 @@ class WeatherAgent(BaseAgent):
                 "Give a one-line friendly summary."
             )
 
-            response = self.ollama_client.chat_completion(prompt)
+            # FIX: Use self.base_llm_provider instead of the missing self.ollama_client
+            # Also passes system_prompt if your BaseLLMProvider supports it!
+            response = self.base_llm_provider.chat_completion(
+                messages=prompt, 
+                system_prompt=self.system_prompt
+            )
             return response.strip()
 
-        except CityNotFoundError as e:
-            raise WeatherAgentExecutionError(f"City not found: {e}")
-        except WeatherAPIError as e:
-            raise WeatherAgentExecutionError(f"Weather API error: {e}")
-        except OllamaError as e:
-            raise WeatherAgentExecutionError(f"Ollama error: {e}")
         except Exception as e:
+            # Dynamic check for exception types to avoid crashing if imports don't exist
+            error_classname = e.__class__.__name__
+            if error_classname in ("CityNotFoundError", "WeatherAPIError", "OllamaError"):
+                raise WeatherAgentExecutionError(f"Dependency error ({error_classname}): {e}")
             raise WeatherAgentExecutionError(str(e))
 
     # ------------------------------------------------------------------
@@ -190,4 +183,5 @@ class WeatherAgent(BaseAgent):
 
 def weather_agent(city: str) -> str:
     agent = WeatherAgent()
+    agent.initialize()  # Added to prevent uninitialized execution bugs
     return agent.get_weather_summary(city)

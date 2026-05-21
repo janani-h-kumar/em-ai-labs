@@ -7,7 +7,7 @@ complementing the weather tool for comprehensive information retrieval.
 
 import logging
 import requests
-from typing import List, Dict, Optional
+from typing import List, Dict
 from dataclasses import dataclass
 from src.middleware.retry import retry_with_backoff
 from pydantic import BaseModel, Field

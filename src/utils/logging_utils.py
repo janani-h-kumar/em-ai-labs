@@ -12,8 +12,8 @@ import uuid
 import contextvars
 import os
 import socket
-from typing import Optional, Dict, Any
-from datetime import datetime, timezone
+from typing import Optional, Any
+from datetime import datetime
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 

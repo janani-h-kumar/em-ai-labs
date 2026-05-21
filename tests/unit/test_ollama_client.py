@@ -4,7 +4,6 @@ from unittest.mock import MagicMock
 from src.providers.ollama_provider import (
     OllamaClient,
     OllamaError,
-    OllamaConnectionError,
 )
 
 

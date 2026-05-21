@@ -37,9 +37,6 @@
 #   client.read_config()                            # read the Config tab
 # ============================================================
 
-import json
-import os
-from datetime import datetime
 from pathlib import Path
 from typing import Optional
 import logging

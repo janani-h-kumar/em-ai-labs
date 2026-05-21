@@ -9,14 +9,13 @@ Key improvements:
 - Explicit startup validation (no silent failures)
 """
 
-from logging import config
 import os
 import yaml
 import logging
 from pathlib import Path
 from typing import Dict, Any, Optional
 from dataclasses import dataclass, field
-from dotenv import dotenv_values, load_dotenv
+from dotenv import dotenv_values
 
 logger = logging.getLogger(__name__)
 

@@ -14,7 +14,7 @@ Changes from original:
 """
 
 import pytest
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import Mock, patch
 
 
 # ---------------------------------------------------------------------------
@@ -88,8 +88,6 @@ class TestWeatherSummary:
     ):
         """get_weather_summary should return a non-empty string on success."""
         from src.agents.weather_agent import WeatherAgent
-        from src.tools.weather_tool import WeatherClient
-        from src.providers.ollama_provider import OllamaClient
 
         agent = WeatherAgent.__new__(WeatherAgent)
         agent.logger = Mock()
@@ -191,7 +189,7 @@ class TestCircuitBreaker:
         assert result == "ok"
 
     def test_circuit_opens_after_threshold_failures(self):
-        from src.middleware.circuit_breaker import CircuitBreakerOpen, CircuitState
+        from src.middleware.circuit_breaker import CircuitState
 
         def always_fails():
             raise ConnectionError("boom")

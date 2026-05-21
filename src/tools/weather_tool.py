@@ -5,10 +5,10 @@ Integrated with BaseTool architectural pattern.
 
 import logging
 import requests
-from typing import Optional, Dict, Any
+from typing import Dict, Any
 from pydantic import BaseModel, Field
 from src.utils.config_loader import ConfigManager
-from src.middleware.circuit_breaker import CircuitBreaker, CircuitBreakerOpen
+from src.middleware.circuit_breaker import CircuitBreaker
 from src.tools.base_tool import BaseTool
 
 logger = logging.getLogger(__name__)

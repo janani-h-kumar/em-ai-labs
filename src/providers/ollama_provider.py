@@ -13,9 +13,9 @@ Changes from original:
 """
 
 import logging
-from typing import Optional, Union, List, Dict
-
 import requests
+from typing import Optional, Union, List, Dict
+from src.providers.base_provider import BaseLLMProvider
 from openai import OpenAI
 
 # FIX: Removed logging.basicConfig(level=logging.INFO) — it overrides
