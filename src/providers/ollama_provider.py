@@ -52,7 +52,7 @@ class OllamaConfigError(OllamaError):
 # Client
 # ---------------------------------------------------------------------------
 
-class OllamaClient:
+class OllamaClient(BaseLLMProvider):
     """Manages interaction with a local Ollama server via the OpenAI-compat API."""
     @property
     def model_name(self):
