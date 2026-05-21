@@ -1,0 +1,51 @@
+name: Security (weekly)
+
+on:
+  schedule:
+    - cron: "0 9 * * 1"   # Every Monday 9am UTC
+  workflow_dispatch:        # Allow manual trigger from GitHub UI
+
+jobs:
+  dependency-audit:
+    name: Dependency CVE audit
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install project + audit tools
+        run: |
+          pip install -e .
+          pip install pip-audit safety
+
+      - name: pip-audit (PyPI vulnerability database)
+        run: pip-audit --desc on --format=markdown > pip-audit-report.md || true
+
+      - name: Safety check (additional CVE database)
+        run: safety check --full-report || true
+
+      - name: Upload audit report as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: security-audit-${{ github.run_id }}
+          path: pip-audit-report.md
+          retention-days: 30
+
+  secret-scan:
+    name: Secret scanning (gitleaks)
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0   # Full history for secret scanning
+
+      - name: Run gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

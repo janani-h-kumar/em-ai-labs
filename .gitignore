@@ -1,6 +1,7 @@
 # Virtual environment
 venv/
 __pycache__/
+ruff_cache/
 *.pyc
 *.pyo
 *.pyd
