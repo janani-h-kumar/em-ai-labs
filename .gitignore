@@ -6,6 +6,7 @@ ruff_cache/
 *.pyo
 *.pyd
 .Python
+.venv/
 
 # Configuration with sensitive data
 config.yaml

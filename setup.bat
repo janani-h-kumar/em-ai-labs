@@ -8,24 +8,24 @@ echo =======================================================
 cd /d "%~dp0"
 
 :: 1. Read .env file to discover the Environment Mode
-set "ENV_MODE=prod"  :: Default fallback if not found
+set "APP_ENV=dev"  :: Default fallback if not found
 if exist ".env" (
     for /f "tokens=1,2 delims==" %%A in (.env) do (
         :: Strip out spaces around the key name to be safe
         set "key=%%A"
         set "key=!key: =!"
-        if /i "!key!"=="ENV_MODE" (
+        if /i "!key!"=="APP_ENV" (
             set "val=%%B"
             :: Strip out spaces/quotes from the value
             set "val=!val: =!"
             set "val=!val:"=!"
             set "val=!val:'=!"
-            set "ENV_MODE=!val!"
+            set "APP_ENV=!val!"
         )
     )
-    echo [*] Detected environment from .env: !ENV_MODE!
+    echo [*] Detected environment from .env: !APP_ENV!
 ) else (
-    echo [WARNING] No .env file found at root. Defaulting to: !ENV_MODE!
+    echo [WARNING] No .env file found at root. Defaulting to: !APP_ENV!
 )
 
 :: 2. Clean up existing virtual environment
@@ -44,7 +44,7 @@ if exist ".venv" (
 
 :: 3. Create fresh local environment sandbox
 echo [2/4] Creating a pristine virtual environment...
-python -m venv .venv
+py -3.11 -m venv .venv
 if %ERRORLEVEL% NEQ 0 (
     echo [ERROR] Failed to create virtual environment.
     exit /b %ERRORLEVEL%
