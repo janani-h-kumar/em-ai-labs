@@ -11,11 +11,15 @@ from src.tools.weather_tool import CityNotFoundError
 
 @pytest.fixture
 def agent():
-    return WeatherAgent(
-        weather_client=Mock(),
-        ollama_client=Mock(),
-        config_path="dummy.yaml"
-    )
+    return WeatherAgent(config_path=None, base_llm_provider=mock_llm, weather_client=mock_weather)
+
+@pytest.fixture
+def mock_llm():
+    return Mock()
+
+@pytest.fixture
+def mock_weather():
+    return Mock()
 
 
 # ------------------------------------------------------------------

@@ -231,4 +231,17 @@ class OllamaClient(BaseLLMProvider):
         except Exception as e:
             raise OllamaError(f"Error calling model '{self.model}': {e}")
 
+    def health_check(self) -> dict:
+        """Checks if the local Ollama instance is reachable."""
+        try:
+            # Example check: pinging your local endpoint, or a lightweight check
+            import requests
+            response = requests.get(f"{self.base_url}/api/tags", timeout=2)
+            return {
+                "status": "healthy" if response.status_code == 200 else "unhealthy",
+                "provider": "OllamaClient"
+            }
+        except Exception as e:
+            return {"status": "unhealthy", "error": str(e), "provider": "OllamaClient"}
+
 Client = OllamaClient

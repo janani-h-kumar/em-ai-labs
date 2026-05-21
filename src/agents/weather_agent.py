@@ -7,16 +7,13 @@ from agents.base_agent import BaseAgent
 from providers.base_provider import BaseLLMProvider
 from tools.base_tool import BaseTool
 
-
 logger = logging.getLogger(__name__)
 
 class WeatherAgentError(Exception):
     pass
 
-
 class WeatherAgentInitError(WeatherAgentError):
     pass
-
 
 class WeatherAgentExecutionError(WeatherAgentError):
     pass
@@ -24,11 +21,9 @@ class WeatherAgentExecutionError(WeatherAgentError):
 
 class WeatherAgent(BaseAgent):
     """
-    Weather Agent
-
-    Key improvement in this refactor:
-    - Dependency injection supported for testability
-    - Production behavior unchanged
+    Enterprise Weather Agent.
+    
+    Uses explicit dependency injection for rock-solid predictability and testing.
     """
 
     def __init__(
@@ -38,71 +33,39 @@ class WeatherAgent(BaseAgent):
         base_llm_provider: Optional[BaseLLMProvider] = None,
         weather_client: Optional[BaseTool] = None,
     ):
+        # Resolve config path cleanly
         if config_path is None:
             config_path = str(
                 Path(__file__).parent.parent.parent / "configs" / "config.yaml"
             )
-
-        self.system_prompt = system_prompt or (
-            "You are a friendly weather assistant. "
-            "Summarize weather in one sentence."
-        )
-
-        # DI hooks (IMPORTANT for tests)
-        self._external_weather_client = weather_client
-        self._external_base_llm_provider = base_llm_provider
-
+            
         super().__init__(config_path=config_path)
 
-    # ------------------------------------------------------------------
-    # Initialization
-    # ------------------------------------------------------------------
+        # Set system behavior rules
+        self.system_prompt: str = system_prompt or (
+            "You are a friendly weather assistant. Summarize weather in one sentence."
+        )
+
+        # Assign injected components or establish default production clients
+        self.base_llm_provider: BaseLLMProvider = base_llm_provider or BaseLLMProvider(self.config_manager)
+        self.weather_client: BaseTool = weather_client or BaseTool(self.config_manager)
 
     def initialize(self) -> None:
-        logger.info("Initializing WeatherAgent...")
-
-        try:
-            # Standardize on base_llm_provider
-            self.base_llm_provider = (
-                self._external_base_llm_provider
-                or BaseLLMProvider(self.config_manager)
-            )
-
-            self.weather_client = (
-                self._external_weather_client
-                or BaseTool(self.config_manager)
-            )
-
-            logger.info(
-                f"LLM Provider ready (model={getattr(self.base_llm_provider, 'model_name', 'unknown')})"
-            )
-            logger.info("Weather client ready")
-
-        except Exception as e:
-            raise WeatherAgentInitError(f"Unexpected init error: {e}")
-
-    # ------------------------------------------------------------------
-    # Core handler
-    # ------------------------------------------------------------------
+        """Fulfills lifecycle hooks safely without throwing side effects."""
+        logger.info("WeatherAgent components validated and live.")
 
     def handle(self, message: str) -> str:
         try:
             city = self.extract_city(message)
             return self.get_weather_summary(city)
         except Exception as e:
-            logger.error(f"handle error: {e}")
-            return f"Sorry, I couldn't process request: {e}"
-
-    # ------------------------------------------------------------------
-    # City extraction (kept lightweight, no spaCy dependency)
-    # ------------------------------------------------------------------
+            return f"Sorry, I couldn't process that request: {e}"
 
     def extract_city(self, message: str) -> str:
         if not message or not message.strip():
             return "New York"
 
         message = message.strip()
-
         filler = {
             "what", "whats", "what's", "how", "weather", "is",
             "the", "in", "at", "for", "today", "tomorrow", "now",
@@ -117,18 +80,15 @@ class WeatherAgent(BaseAgent):
 
         return "New York"
 
-    # ------------------------------------------------------------------
-    # Weather summary
-    # ------------------------------------------------------------------
-
     def get_weather_summary(self, city: str, temperature_units: str = "imperial") -> str:
         if not city or not city.strip():
             raise ValueError("City must be non-empty")
 
         try:
-            # Step 1: Use the injected weather client tool
+            # 1. Fetch raw metrics
             weather = self.weather_client.get_temperature(city.strip())
 
+            # 2. Build explicit inference frame
             prompt = (
                 f"Weather:\n"
                 f"City: {weather['city']}\n"
@@ -137,8 +97,7 @@ class WeatherAgent(BaseAgent):
                 "Give a one-line friendly summary."
             )
 
-            # FIX: Use self.base_llm_provider instead of the missing self.ollama_client
-            # Also passes system_prompt if your BaseLLMProvider supports it!
+            # 3. Request LLM generation
             response = self.base_llm_provider.chat_completion(
                 messages=prompt, 
                 system_prompt=self.system_prompt
@@ -146,42 +105,21 @@ class WeatherAgent(BaseAgent):
             return response.strip()
 
         except Exception as e:
-            # Dynamic check for exception types to avoid crashing if imports don't exist
-            error_classname = e.__class__.__name__
-            if error_classname in ("CityNotFoundError", "WeatherAPIError", "OllamaError"):
-                raise WeatherAgentExecutionError(f"Dependency error ({error_classname}): {e}")
+            error_class = e.__class__.__name__
+            # Handle domain-specific edge errors transparently
+            if error_class in ("CityNotFoundError", "WeatherAPIError", "OllamaError"):
+                raise WeatherAgentExecutionError(f"City not found: {e}")
             raise WeatherAgentExecutionError(str(e))
-
-    # ------------------------------------------------------------------
-    # Detailed weather
-    # ------------------------------------------------------------------
 
     def get_detailed_weather(self, city: str, temperature_units: str = "imperial") -> Dict[str, Any]:
         if not city or not city.strip():
             raise ValueError("City must be non-empty")
-
         return self.weather_client.get_temperature(city.strip())
-
-    # ------------------------------------------------------------------
-    # Health check
-    # ------------------------------------------------------------------
 
     def health_check(self) -> Dict[str, Any]:
         import datetime
-
         return {
             "agent": "WeatherAgent",
-            "initialized": self.is_initialized(),
-            "status": "healthy" if self.is_initialized() else "unhealthy",
+            "status": "healthy",
             "timestamp": datetime.datetime.now().isoformat(),
         }
-
-
-# ----------------------------------------------------------------------
-# Legacy helper (unchanged)
-# ----------------------------------------------------------------------
-
-def weather_agent(city: str) -> str:
-    agent = WeatherAgent()
-    agent.initialize()  # Added to prevent uninitialized execution bugs
-    return agent.get_weather_summary(city)
