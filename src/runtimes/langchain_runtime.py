@@ -113,9 +113,6 @@ class LangChainRuntime(BaseRuntime):
             if tools:
                 self.set_tools(tools)
 
-            self.agent_executor = (
-                self._setup_agent() if self.tools else None
-            )
             if not self.tools:
                 logger.warning("No tools provided; agent executor not initialised.")
 
