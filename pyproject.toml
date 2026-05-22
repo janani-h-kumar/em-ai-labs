@@ -84,3 +84,8 @@ ignore_missing_imports = true
 strict_optional = true
 warn_return_any = true
 warn_unused_configs = true
+
+[tool.ruff.format]
+# This forces Ruff to use Linux-style line endings globally,
+# which matches what your Linux-based Git CI environment expects.
+line-ending = "lf"
