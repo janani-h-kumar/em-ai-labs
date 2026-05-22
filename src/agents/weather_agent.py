@@ -57,8 +57,7 @@ class WeatherAgent(BaseAgent):
             raise AgentInitError("weather_client is required")
 
         self.system_prompt = (
-            "You are a helpful weather assistant. "
-            "Provide concise and friendly weather summaries."
+            "You are a helpful weather assistant. Provide concise and friendly weather summaries."
         )
 
         logger.info("WeatherAgent initialized successfully")
@@ -135,9 +134,7 @@ class WeatherAgent(BaseAgent):
             return str(summary)
 
         except CityNotFoundError as e:
-            raise WeatherAgentExecutionError(
-                f"City not found: {city}"
-            ) from e
+            raise WeatherAgentExecutionError(f"City not found: {city}") from e
 
         except Exception as e:
             logger.exception("Failed getting weather summary")

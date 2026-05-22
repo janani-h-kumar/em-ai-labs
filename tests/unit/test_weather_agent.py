@@ -52,10 +52,7 @@ class TestWeatherAgentInitialization:
 
         assert agent.is_initialized() is True
 
-        assert (
-            agent.config_manager.get("runtime.orchestration")
-            == "langchain"
-        )
+        assert agent.config_manager.get("runtime.orchestration") == "langchain"
 
 
 # ---------------------------------------------------------------------------
@@ -68,9 +65,7 @@ class TestExtractCity:
         assert agent.extract_city("Weather in London") == "London"
 
     def test_extracts_multi_word_city(self, agent):
-        city = agent.extract_city(
-            "What is the weather in New York today?"
-        )
+        city = agent.extract_city("What is the weather in New York today?")
 
         assert city == "New York"
 
@@ -117,9 +112,7 @@ class TestWeatherSummary:
 
         mock_llm = Mock()
 
-        mock_llm.chat_completion.return_value = (
-            "London is cloudy and mild today!"
-        )
+        mock_llm.chat_completion.return_value = "London is cloudy and mild today!"
 
         agent = WeatherAgent(
             config_manager=config_for_testing,
@@ -138,9 +131,7 @@ class TestWeatherSummary:
     ):
         mock_wc = Mock()
 
-        mock_wc.get_temperature.side_effect = (
-            CityNotFoundError("Fake City not found")
-        )
+        mock_wc.get_temperature.side_effect = CityNotFoundError("Fake City not found")
 
         agent = WeatherAgent(
             config_manager=config_for_testing,
@@ -178,10 +169,7 @@ class TestWeatherSummary:
 
 class TestConfigManager:
     def test_get_existing_key(self, config_for_testing):
-        assert (
-            config_for_testing.get("runtime.orchestration")
-            == "langchain"
-        )
+        assert config_for_testing.get("runtime.orchestration") == "langchain"
 
     def test_get_missing_key_returns_default(
         self,
@@ -200,9 +188,7 @@ class TestConfigManager:
         config_for_testing,
     ):
         with pytest.raises(ConfigValidationError):
-            config_for_testing.get_required(
-                "env.DOES_NOT_EXIST"
-            )
+            config_for_testing.get_required("env.DOES_NOT_EXIST")
 
     def test_set_updates_value(self, config_for_testing):
         config_for_testing.set(
@@ -210,10 +196,7 @@ class TestConfigManager:
             "custom",
         )
 
-        assert (
-            config_for_testing.get("runtime.orchestration")
-            == "custom"
-        )
+        assert config_for_testing.get("runtime.orchestration") == "custom"
 
     def test_validate_startup_passes_with_full_config(
         self,
