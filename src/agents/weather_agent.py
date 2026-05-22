@@ -3,9 +3,9 @@ import re
 from pathlib import Path
 from typing import Any
 
-from agents.base_agent import BaseAgent
-from providers.base_provider import BaseLLMProvider
-from tools.base_tool import BaseTool
+from src.agents.base_agent import BaseAgent
+from src.providers.base_provider import BaseLLMProvider
+from src.tools.base_tool import BaseTool
 
 logger = logging.getLogger(__name__)
 
