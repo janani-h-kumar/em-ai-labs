@@ -8,63 +8,101 @@ from unittest.mock import Mock
 import pytest
 
 from src.agents.weather_agent import WeatherAgent, WeatherAgentExecutionError
-from src.middleware.circuit_breaker import CircuitBreaker, CircuitBreakerOpenError, CircuitState
+from src.middleware.circuit_breaker import (
+    CircuitBreaker,
+    CircuitBreakerOpenError,
+    CircuitState,
+)
 from src.middleware.retry import retry_with_backoff
 from src.tools.weather_tool import CityNotFoundError
 from src.utils.config_loader import ConfigValidationError
 
+# ---------------------------------------------------------------------------
+# Shared Fixtures
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def agent(config_for_testing):
+    """
+    Fully initialized WeatherAgent fixture using dependency injection.
+    """
+    return WeatherAgent(
+        config_manager=config_for_testing,
+        base_llm_provider=Mock(),
+        weather_client=Mock(),
+    )
+
+
+# ---------------------------------------------------------------------------
+# WeatherAgent initialization tests
+# ---------------------------------------------------------------------------
+
 
 class TestWeatherAgentInitialization:
     def test_agent_initializes_successfully(self, config_for_testing):
-        """Agent should initialize without raising when components are explicitly passed."""
         mock_llm = Mock()
         mock_weather = Mock()
 
-        # Instantiate using proper Dependency Injection
         agent = WeatherAgent(
-            config_path=None, base_llm_provider=mock_llm, weather_client=mock_weather
+            config_manager=config_for_testing,
+            base_llm_provider=mock_llm,
+            weather_client=mock_weather,
         )
 
-        # Inject the test config context manager directly
-        agent.config_manager = config_for_testing
-        agent.initialize()
+        assert agent.is_initialized() is True
 
-        assert agent.config_manager.get("runtime.orchestration") == "langchain"
+        assert (
+            agent.config_manager.get("runtime.orchestration")
+            == "langchain"
+        )
+
+
+# ---------------------------------------------------------------------------
+# extract_city tests
+# ---------------------------------------------------------------------------
 
 
 class TestExtractCity:
-    """Test the improved city extraction logic using real instances with light mocks."""
+    def test_extracts_simple_city(self, agent):
+        assert agent.extract_city("Weather in London") == "London"
 
-    def setup_method(self):
-        # Create a clean, fast instance without heavy downstream connections
-        self.agent = WeatherAgent(base_llm_provider=Mock(), weather_client=Mock())
+    def test_extracts_multi_word_city(self, agent):
+        city = agent.extract_city(
+            "What is the weather in New York today?"
+        )
 
-    def test_extracts_simple_city(self):
-        assert self.agent.extract_city("Weather in London") == "London"
-
-    def test_extracts_multi_word_city(self):
-        city = self.agent.extract_city("What is the weather in New York today?")
         assert city == "New York"
 
-    def test_does_not_return_filler_words(self):
-        city = self.agent.extract_city("what's the weather today?")
+    def test_does_not_return_filler_words(self, agent):
+        city = agent.extract_city("what's the weather today?")
+
         assert city == "New York"
 
-    def test_empty_string_returns_default(self):
-        assert self.agent.extract_city("") == "New York"
+    def test_empty_string_returns_default(self, agent):
+        assert agent.extract_city("") == "New York"
 
-    def test_none_like_empty_returns_default(self):
-        assert self.agent.extract_city("   ") == "New York"
+    def test_none_like_empty_returns_default(self, agent):
+        assert agent.extract_city("   ") == "New York"
 
-    def test_titled_city_extracted(self):
-        result = self.agent.extract_city("Is it raining in Paris?")
+    def test_titled_city_extracted(self, agent):
+        result = agent.extract_city("Is it raining in Paris?")
+
         assert result == "Paris"
 
 
+# ---------------------------------------------------------------------------
+# Weather summary tests
+# ---------------------------------------------------------------------------
+
+
 class TestWeatherSummary:
-    def test_get_weather_summary_returns_string(self, config_for_testing):
-        """get_weather_summary should return a non-empty string on success."""
+    def test_get_weather_summary_returns_string(
+        self,
+        config_for_testing,
+    ):
         mock_wc = Mock()
+
         mock_wc.get_temperature.return_value = {
             "city": "London",
             "country": "GB",
@@ -78,31 +116,58 @@ class TestWeatherSummary:
         }
 
         mock_llm = Mock()
-        mock_llm.chat_completion.return_value = "London is cloudy and mild today!"
 
-        # Explicit Injection
-        agent = WeatherAgent(base_llm_provider=mock_llm, weather_client=mock_wc)
-        agent.config_manager = config_for_testing
+        mock_llm.chat_completion.return_value = (
+            "London is cloudy and mild today!"
+        )
+
+        agent = WeatherAgent(
+            config_manager=config_for_testing,
+            base_llm_provider=mock_llm,
+            weather_client=mock_wc,
+        )
 
         result = agent.get_weather_summary("London")
+
         assert isinstance(result, str)
         assert len(result) > 0
 
-    def test_city_not_found_raises_execution_error(self, config_for_testing):
-        """CityNotFoundError from weather client should become WeatherAgentExecutionError."""
+    def test_city_not_found_raises_execution_error(
+        self,
+        config_for_testing,
+    ):
         mock_wc = Mock()
-        mock_wc.get_temperature.side_effect = CityNotFoundError("Fake City not found")
 
-        agent = WeatherAgent(base_llm_provider=Mock(), weather_client=mock_wc)
-        agent.config_manager = config_for_testing
+        mock_wc.get_temperature.side_effect = (
+            CityNotFoundError("Fake City not found")
+        )
 
-        with pytest.raises(WeatherAgentExecutionError, match="City not found"):
+        agent = WeatherAgent(
+            config_manager=config_for_testing,
+            base_llm_provider=Mock(),
+            weather_client=mock_wc,
+        )
+
+        with pytest.raises(
+            WeatherAgentExecutionError,
+            match="City not found",
+        ):
             agent.get_weather_summary("Fake City")
 
-    def test_empty_city_raises_value_error(self):
-        agent = WeatherAgent(base_llm_provider=Mock(), weather_client=Mock())
+    def test_empty_city_raises_value_error(
+        self,
+        config_for_testing,
+    ):
+        agent = WeatherAgent(
+            config_manager=config_for_testing,
+            base_llm_provider=Mock(),
+            weather_client=Mock(),
+        )
 
-        with pytest.raises(ValueError, match="non-empty"):
+        with pytest.raises(
+            ValueError,
+            match="non-empty",
+        ):
             agent.get_weather_summary("")
 
 
@@ -113,24 +178,58 @@ class TestWeatherSummary:
 
 class TestConfigManager:
     def test_get_existing_key(self, config_for_testing):
-        assert config_for_testing.get("runtime.orchestration") == "langchain"
+        assert (
+            config_for_testing.get("runtime.orchestration")
+            == "langchain"
+        )
 
-    def test_get_missing_key_returns_default(self, config_for_testing):
-        assert config_for_testing.get("nonexistent.key", default="fallback") == "fallback"
+    def test_get_missing_key_returns_default(
+        self,
+        config_for_testing,
+    ):
+        assert (
+            config_for_testing.get(
+                "nonexistent.key",
+                default="fallback",
+            )
+            == "fallback"
+        )
 
-    def test_get_required_raises_on_missing(self, config_for_testing):
+    def test_get_required_raises_on_missing(
+        self,
+        config_for_testing,
+    ):
         with pytest.raises(ConfigValidationError):
-            config_for_testing.get_required("env.DOES_NOT_EXIST")
+            config_for_testing.get_required(
+                "env.DOES_NOT_EXIST"
+            )
 
     def test_set_updates_value(self, config_for_testing):
-        config_for_testing.set("runtime.orchestration", "custom")
-        assert config_for_testing.get("runtime.orchestration") == "custom"
+        config_for_testing.set(
+            "runtime.orchestration",
+            "custom",
+        )
 
-    def test_validate_startup_passes_with_full_config(self, config_for_testing):
+        assert (
+            config_for_testing.get("runtime.orchestration")
+            == "custom"
+        )
+
+    def test_validate_startup_passes_with_full_config(
+        self,
+        config_for_testing,
+    ):
         config_for_testing.validate_startup()
 
-    def test_validate_startup_raises_on_missing_key(self, config_for_testing):
-        config_for_testing._config["env"].pop("OPENWEATHER_API_KEY", None)
+    def test_validate_startup_raises_on_missing_key(
+        self,
+        config_for_testing,
+    ):
+        config_for_testing._config["env"].pop(
+            "OPENWEATHER_API_KEY",
+            None,
+        )
+
         with pytest.raises(ConfigValidationError):
             config_for_testing.validate_startup()
 
@@ -150,6 +249,7 @@ class TestCircuitBreaker:
 
     def test_successful_call_passes_through(self):
         result = self.cb.call(lambda: "ok")
+
         assert result == "ok"
 
     def test_circuit_opens_after_threshold_failures(self):
@@ -193,10 +293,13 @@ class TestRetryWithBackoff:
         @retry_with_backoff(max_retries=3)
         def always_works():
             nonlocal call_count
+
             call_count += 1
+
             return "done"
 
         result = always_works()
+
         assert result == "done"
         assert call_count == 1
 
@@ -210,12 +313,16 @@ class TestRetryWithBackoff:
         )
         def fails_twice():
             nonlocal call_count
+
             call_count += 1
+
             if call_count < 3:
                 raise ConnectionError("transient")
+
             return "recovered"
 
         result = fails_twice()
+
         assert result == "recovered"
         assert call_count == 3
 
@@ -228,7 +335,9 @@ class TestRetryWithBackoff:
         )
         def permanent_failure():
             nonlocal call_count
+
             call_count += 1
+
             raise ValueError("permanent — don't retry")
 
         with pytest.raises(ValueError):

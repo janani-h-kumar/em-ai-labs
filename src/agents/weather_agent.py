@@ -1,143 +1,144 @@
+"""
+WeatherAgent implementation using explicit Dependency Injection.
+"""
+
 import logging
 import re
-from pathlib import Path
 from typing import Any
 
-from src.agents.base_agent import BaseAgent
-from src.providers.base_provider import BaseLLMProvider
-from src.tools.base_tool import BaseTool
+from src.agents.base_agent import (
+    AgentExecutionError,
+    AgentInitError,
+    BaseAgent,
+)
+from src.tools.weather_tool import CityNotFoundError
+from src.utils.config_loader import ConfigManager
 
 logger = logging.getLogger(__name__)
 
 
-class WeatherAgentError(Exception):
-    pass
-
-
-class WeatherAgentInitError(WeatherAgentError):
-    pass
-
-
-class WeatherAgentExecutionError(WeatherAgentError):
-    pass
+class WeatherAgentExecutionError(AgentExecutionError):
+    """Raised when weather agent execution fails."""
 
 
 class WeatherAgent(BaseAgent):
     """
-    Enterprise Weather Agent.
+    Weather agent with explicit dependency injection.
 
-    Uses explicit dependency injection for rock-solid predictability and testing.
+    Dependencies are passed in from outside:
+    - config_manager
+    - base_llm_provider
+    - weather_client
     """
 
     def __init__(
         self,
-        config_path: str | None = None,
-        system_prompt: str | None = None,
-        base_llm_provider: BaseLLMProvider | None = None,
-        weather_client: BaseTool | None = None,
-    ):
-        # Resolve config path cleanly
-        if config_path is None:
-            config_path = str(Path(__file__).parent.parent.parent / "configs" / "config.yaml")
+        config_manager: ConfigManager,
+        base_llm_provider: Any,
+        weather_client: Any,
+    ) -> None:
+        self.base_llm_provider = base_llm_provider
+        self.weather_client = weather_client
 
-        super().__init__(config_path=config_path)
+        super().__init__(config_manager)
 
-        # Set system behavior rules
-        self.system_prompt: str = system_prompt or (
-            "You are a friendly weather assistant. Summarize weather in one sentence."
-        )
-
-        # Assign injected components or establish default production clients
-        self.base_llm_provider: BaseLLMProvider = base_llm_provider or BaseLLMProvider(
-            self.config_manager
-        )
-        self.weather_client: BaseTool = weather_client or BaseTool(self.config_manager)
+    # ------------------------------------------------------------------
+    # BaseAgent contract
+    # ------------------------------------------------------------------
 
     def initialize(self) -> None:
-        """Fulfills lifecycle hooks safely without throwing side effects."""
-        logger.info("WeatherAgent components validated and live.")
+        """
+        Validate injected dependencies and initialize prompts/state.
+        """
+        if self.base_llm_provider is None:
+            raise AgentInitError("base_llm_provider is required")
+
+        if self.weather_client is None:
+            raise AgentInitError("weather_client is required")
+
+        self.system_prompt = (
+            "You are a helpful weather assistant. "
+            "Provide concise and friendly weather summaries."
+        )
+
+        logger.info("WeatherAgent initialized successfully")
 
     def handle(self, message: str) -> str:
+        """
+        Main router entrypoint.
+        """
         try:
             city = self.extract_city(message)
             return self.get_weather_summary(city)
+
+        except WeatherAgentExecutionError:
+            raise
+
         except Exception as e:
-            return f"Sorry, I couldn't process that request: {e}"
+            logger.exception("WeatherAgent handle() failed")
+            raise WeatherAgentExecutionError(str(e)) from e
+
+    # ------------------------------------------------------------------
+    # Domain logic
+    # ------------------------------------------------------------------
 
     def extract_city(self, message: str) -> str:
+        """
+        Extract city name from user message.
+
+        Falls back to New York if extraction fails.
+        """
         if not message or not message.strip():
             return "New York"
 
-        message = message.strip()
-        filler = {
-            "what",
-            "whats",
-            "what's",
-            "how",
-            "weather",
-            "is",
-            "the",
-            "in",
-            "at",
-            "for",
-            "today",
-            "tomorrow",
-            "now",
-            "can",
-            "you",
-            "please",
-        }
+        patterns = [
+            r"in\s+([A-Za-z\s]+)",
+            r"for\s+([A-Za-z\s]+)",
+        ]
 
-        candidates = re.findall(r"\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)\b", message)
-        filtered = [c for c in candidates if c.lower() not in filler]
+        for pattern in patterns:
+            match = re.search(pattern, message, re.IGNORECASE)
 
-        if filtered:
-            return filtered[0]
+            if match:
+                city = match.group(1).strip()
+
+                city = re.sub(
+                    r"\b(today|now|please|weather|temperature)\b",
+                    "",
+                    city,
+                    flags=re.IGNORECASE,
+                ).strip()
+
+                if city:
+                    return city.title()
 
         return "New York"
 
-    def get_weather_summary(self, city: str, temperature_units: str = "imperial") -> str:
+    def get_weather_summary(self, city: str) -> str:
+        """
+        Fetch weather and generate summary.
+        """
         if not city or not city.strip():
-            raise ValueError("City must be non-empty")
+            raise ValueError("city must be a non-empty string")
 
         try:
-            # 1. Fetch raw metrics
-            weather = self.weather_client.get_temperature(city.strip())
+            weather_data = self.weather_client.get_temperature(city)
 
-            # 2. Build explicit inference frame
             prompt = (
-                f"Weather:\n"
-                f"City: {weather['city']}\n"
-                f"Temp: {weather['temperature']}\n"
-                f"Condition: {weather['condition']}\n\n"
-                "Give a one-line friendly summary."
+                f"Weather in {weather_data['city']}: "
+                f"{weather_data['description']}, "
+                f"temperature {weather_data['temperature']}°."
             )
 
-            # 3. Request LLM generation
-            response = self.base_llm_provider.chat_completion(
-                messages=prompt, system_prompt=self.system_prompt
-            )
-            return response.strip()
+            summary = self.base_llm_provider.chat_completion(prompt)
+
+            return str(summary)
+
+        except CityNotFoundError as e:
+            raise WeatherAgentExecutionError(
+                f"City not found: {city}"
+            ) from e
 
         except Exception as e:
-            error_class = e.__class__.__name__
-            # Handle domain-specific edge errors transparently
-            if error_class in ("CityNotFoundError", "WeatherAPIError", "OllamaError"):
-                raise WeatherAgentExecutionError("City not found: {e}") from e
-            raise WeatherAgentExecutionError("An error occurred: {e}") from e
-
-    def get_detailed_weather(
-        self, city: str, temperature_units: str = "imperial"
-    ) -> dict[str, Any]:
-        if not city or not city.strip():
-            raise ValueError("City must be non-empty")
-        return self.weather_client.get_temperature(city.strip())
-
-    def health_check(self) -> dict[str, Any]:
-        import datetime
-
-        return {
-            "agent": "WeatherAgent",
-            "status": "healthy",
-            "timestamp": datetime.datetime.now().isoformat(),
-        }
+            logger.exception("Failed getting weather summary")
+            raise WeatherAgentExecutionError(str(e)) from e
