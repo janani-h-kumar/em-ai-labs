@@ -73,5 +73,5 @@ class RuntimeFactory:
 
         else:
             raise ValueError(
-                f"Unknown runtime type: {runtime_type}. " f"Valid options: 'langchain', 'custom'"
+                f"Unknown runtime type: {runtime_type}. Valid options: 'langchain', 'custom'"
             )

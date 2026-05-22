@@ -72,6 +72,9 @@ ignore = [
     "W293", # Blank line contains whitespace
 ]
 
+[tool.ruff.format]
+line-ending = "lf"
+
 [tool.ruff.lint.per-file-ignores]
 "tests/*" = ["S101"]   # allow assert statements in tests
 
@@ -85,7 +88,3 @@ strict_optional = true
 warn_return_any = true
 warn_unused_configs = true
 
-[tool.ruff.format]
-# This forces Ruff to use Linux-style line endings globally,
-# which matches what your Linux-based Git CI environment expects.
-line-ending = "lf"

@@ -178,7 +178,7 @@ class SheetsClient:
 
         if sheet_row_number > len(rows):
             raise IndexError(
-                f"row_index {row_index} is out of range. " f"Tab has {len(rows) - 1} data row(s)."
+                f"row_index {row_index} is out of range. Tab has {len(rows) - 1} data row(s)."
             )
 
         existing = self._row_to_dict(header, rows[sheet_row_number - 1])

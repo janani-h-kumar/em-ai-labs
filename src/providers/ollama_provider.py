@@ -127,8 +127,7 @@ class OllamaClient(BaseLLMProvider):
             logger.info("Successfully connected to Ollama server")
         except requests.ConnectionError as e:
             raise OllamaConnectionError(
-                f"Cannot connect to Ollama at {self.base_url}. "
-                "Is Ollama running? Try: ollama serve"
+                f"Cannot connect to Ollama at {self.base_url}. Is Ollama running? Try: ollama serve"
             ) from e
         except requests.Timeout as e:
             raise OllamaConnectionError(
@@ -214,7 +213,7 @@ class OllamaClient(BaseLLMProvider):
                 messages = content
             else:
                 raise OllamaError(
-                    f"Invalid content type {type(content)}. " "Expected str, dict, or list."
+                    f"Invalid content type {type(content)}. Expected str, dict, or list."
                 )
 
             logger.info("Sending %s message(s) to model: %s", len(messages), self.model)

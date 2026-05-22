@@ -84,7 +84,7 @@ def retry_with_backoff(
                     # FIX: Don't retry permanent failures — fail fast.
                     if not isinstance(e, effective_retryable):
                         logger.debug(
-                            "%s raised non-retryable " "%s, failing immediately.",
+                            "%s raised non-retryable %s, failing immediately.",
                             func.__name__,
                             type(e).__name__,
                         )
@@ -95,7 +95,7 @@ def retry_with_backoff(
                         jitter = delay * jitter_factor * (2 * random.random() - 1)
                         sleep_time = max(0.0, delay + jitter)
                         logger.warning(
-                            "%s failed (attempt %d/%d), " "retrying in %.2f}s: %s",
+                            "%s failed (attempt %d/%d), retrying in %.2f}s: %s",
                             func.__name__,
                             attempt + 1,
                             max_retries,

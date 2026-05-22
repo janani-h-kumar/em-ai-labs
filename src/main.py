@@ -52,9 +52,11 @@ class ToolManager:
                 name="weather",
                 description="Get current weather for a city. Input: city name. Output: temperature, condition, humidity.",
                 args_schema=WeatherInput,
-                factory_fn=lambda manager: lambda *args, **kwargs: str(
-                    WeatherClient(manager.config_manager).get_temperature(
-                        city=kwargs.get("city") or (args[0] if args else None)
+                factory_fn=lambda manager: (
+                    lambda *args, **kwargs: str(
+                        WeatherClient(manager.config_manager).get_temperature(
+                            city=kwargs.get("city") or (args[0] if args else None)
+                        )
                     )
                 ),
             ),
@@ -62,10 +64,12 @@ class ToolManager:
                 name="web_search",
                 description="Search the web. Input: query string. Output: titles, URLs, snippets.",
                 args_schema=WebSearchInput,
-                factory_fn=lambda manager: lambda *args, **kwargs: str(
-                    WebSearchClient().search_as_dict(
-                        query=kwargs.get("query") or (args[0] if args else None),
-                        num_results=3,
+                factory_fn=lambda manager: (
+                    lambda *args, **kwargs: str(
+                        WebSearchClient().search_as_dict(
+                            query=kwargs.get("query") or (args[0] if args else None),
+                            num_results=3,
+                        )
                     )
                 ),
             ),
