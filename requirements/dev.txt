@@ -23,7 +23,7 @@ pytest-asyncio==0.24.0
 # =========================
 black==24.8.0
 # Opinionated Python formatter (ensures consistent style)
-ruff==0.6.9
+ruff==0.15.14
 # Extremely fast linter + import sorter (replaces flake8/isort)
 mypy==1.11.2
 # Static type checker for Python

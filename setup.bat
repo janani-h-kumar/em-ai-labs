@@ -51,10 +51,10 @@ if %ERRORLEVEL% NEQ 0 (
 )
 
 :: 4. Install dependencies based on .env layout choice
-echo [3/4] Installing dependencies for mode: !ENV_MODE! ...
+echo [3/4] Installing dependencies for mode: !APP_ENV! ...
 .venv\Scripts\python.exe -m pip install --upgrade pip
 
-if /i "!ENV_MODE!"=="dev" (
+if /i "!APP_ENV!"=="dev" (
     :: In development, we typically want both production and dev tools
     if exist "requirements\prod.txt" .venv\Scripts\python.exe -m pip install -r requirements\prod.txt
     if exist "requirements\dev.txt" .venv\Scripts\python.exe -m pip install -r requirements\dev.txt
@@ -81,11 +81,11 @@ if %ERRORLEVEL% NEQ 0 (
 )
 
 echo =======================================================
-echo   SUCCESS! Environment built (!ENV_MODE! mode).
+echo   SUCCESS! Environment built (!APP_ENV! mode).
 echo =======================================================
 
 :: End local environment scope but pass target mode variable to out-of-block trick
-set "FINAL_MODE=!ENV_MODE!"
+set "FINAL_MODE=!APP_ENV!"
 ENDLOCAL
 
 echo %cmdcmdline% | findstr /i /c:"/c" >nul
