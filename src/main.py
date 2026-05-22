@@ -156,7 +156,7 @@ class AgentManager:
 
             agent_name, confidence = self.router.route_message(message)
             logger.info(
-                "Message routed", Extra={"extra_data": {
+                "Message routed", extra={"extra_data": {
                     "request_id": request_id,
                     "agent": agent_name,
                     "confidence": confidence,

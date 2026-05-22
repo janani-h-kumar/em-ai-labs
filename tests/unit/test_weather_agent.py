@@ -8,7 +8,7 @@ from unittest.mock import Mock
 import pytest
 
 from src.agents.weather_agent import WeatherAgent, WeatherAgentExecutionError
-from src.middleware.circuit_breaker import CircuitBreaker, CircuitBreakerOpen, CircuitState
+from src.middleware.circuit_breaker import CircuitBreaker, CircuitBreakerOpenError, CircuitState
 from src.middleware.retry import retry_with_backoff
 from src.tools.weather_tool import CityNotFoundError
 from src.utils.config_loader import ConfigValidationError
@@ -168,7 +168,7 @@ class TestCircuitBreaker:
         self.cb.state = CircuitState.OPEN
         self.cb.last_failure_time = time.time()
 
-        with pytest.raises(CircuitBreakerOpen):
+        with pytest.raises(CircuitBreakerOpenError):
             self.cb.call(lambda: "should not run")
 
     def test_circuit_resets_after_successful_half_open(self):
