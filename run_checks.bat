@@ -9,7 +9,10 @@ echo =======================================================
 SET "PROJECT_ROOT=%~dp0"
 cd /d "%PROJECT_ROOT%"
 
+:: =======================================================
 :: 1. LOCATE RUFF
+:: =======================================================
+
 :: Check if ruff is already available in the active PATH environment
 where ruff >nul 2>nul
 if %ERRORLEVEL% EQU 0 (
@@ -25,7 +28,29 @@ if %ERRORLEVEL% EQU 0 (
     )
 )
 
-:: 2. LOCATE PYTEST
+:: =======================================================
+:: 2. LOCATE MYPY
+:: =======================================================
+
+:: Check if mypy is already available in the active PATH environment
+where mypy >nul 2>nul
+if %ERRORLEVEL% EQU 0 (
+    SET "MYPY_CMD=mypy"
+) else (
+    :: Fallback to local disk path if not active
+    if exist "%PROJECT_ROOT%.venv\Scripts\mypy.exe" (
+        SET "MYPY_CMD=\"%PROJECT_ROOT%.venv\Scripts\mypy.exe\""
+    ) else (
+        echo [ERROR] Mypy type checker could not be found in active PATH or local .venv.
+        echo         Please install mypy or run setup.bat.
+        exit /b 1
+    )
+)
+
+:: =======================================================
+:: 3. LOCATE PYTEST
+:: =======================================================
+
 :: Check if pytest is already available in the active PATH environment
 where pytest >nul 2>nul
 if %ERRORLEVEL% EQU 0 (
@@ -41,10 +66,12 @@ if %ERRORLEVEL% EQU 0 (
     )
 )
 
-:: --- EXECUTION PHASE ---
+:: =======================================================
+:: EXECUTION PHASE
+:: =======================================================
 
 :: Phase 1: Linting and Code Style Checks
-echo [1/2] Executing Ruff Linter...
+echo [1/3] Executing Ruff Linter...
 echo -------------------------------------------------------
 !RUFF_CMD! check . --fix
 if %ERRORLEVEL% NEQ 0 (
@@ -55,8 +82,20 @@ if %ERRORLEVEL% NEQ 0 (
 echo [PASS] Code quality checks passed cleanly.
 echo.
 
-:: Phase 2: Automated Unit and Integration Testing
-echo [2/2] Executing Pytest Framework...
+:: Phase 2: Static Type Checking
+::echo [2/3] Executing Mypy Type Checks...
+::echo -------------------------------------------------------
+::!MYPY_CMD! .
+::if %ERRORLEVEL% NEQ 0 (
+::    echo.
+::    echo [FAIL] Mypy type checks failed.
+::    exit /b %ERRORLEVEL%
+::)
+::echo [PASS] Mypy type checks passed.
+::echo.
+
+:: Phase 3: Automated Unit and Integration Testing
+echo [3/3] Executing Pytest Framework...
 echo -------------------------------------------------------
 !PYTEST_CMD!
 if %ERRORLEVEL% NEQ 0 (

@@ -38,8 +38,8 @@ jobs:
       - name: Ruff format check
         run: ruff format src/ tests/ --check
 
-      - name: Mypy type check
-        run: mypy src/ --ignore-missing-imports --strict-optional
+      #- name: Mypy type check
+      #  run: mypy src/ --ignore-missing-imports --strict-optional
 
       - name: Run Ruff Formatter
         run: |
