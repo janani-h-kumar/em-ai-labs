@@ -41,6 +41,10 @@ jobs:
       - name: Mypy type check
         run: mypy src/ --ignore-missing-imports --strict-optional
 
+      - name: Run Ruff Formatter
+        run: |
+          ruff format src/ tests/
+          ruff format src/ tests/ --check
   # ──────────────────────────────────────────────
   # JOB 2: Security scan
   # Bandit (code patterns) + pip-audit (CVEs)
