@@ -57,14 +57,14 @@ _SCOPES = [
 
 logger = logging.getLogger(__name__)
 
-_CONFIG_DIR      = Path(__file__).parent.parent.parent / "config"
+_CONFIG_DIR = Path(__file__).parent.parent.parent / "config"
 _CREDENTIALS_PATH = _CONFIG_DIR / "credentials.json"
-_TOKEN_PATH       = _CONFIG_DIR / "token.json"
+_TOKEN_PATH = _CONFIG_DIR / "token.json"
 
 # Tab names — must match exactly what you named them in the Sheet
 _TAB_TRANSACTIONS = "Transactions"
-_TAB_SUMMARY      = "Summary"
-_TAB_CONFIG       = "Config"
+_TAB_SUMMARY = "Summary"
+_TAB_CONFIG = "Config"
 
 # Column order for the Transactions tab
 _TRANSACTION_COLUMNS = [
@@ -86,6 +86,7 @@ _TRANSACTION_COLUMNS = [
 # SheetsClient
 # ============================================================
 
+
 class SheetsClient:
     """
     Thin, deterministic wrapper around the Google Sheets API.
@@ -101,7 +102,6 @@ class SheetsClient:
             raise ValueError("spreadsheet_id is required.")
         self._spreadsheet_id = spreadsheet_id
         self._service = self._build_service()
-
 
     # --------------------------------------------------------
     # PUBLIC — Transactions tab
@@ -132,7 +132,6 @@ class SheetsClient:
         logger.info("Appended %d transaction(s) to '%s'", len(rows), _TAB_TRANSACTIONS)
         return len(rows)
 
-
     def read_transactions(self, month: str | None = None) -> list[dict]:
         """
         Read all transactions from the Transactions tab.
@@ -153,12 +152,10 @@ class SheetsClient:
 
         if month:
             data = [
-                t for t in data
-                if isinstance(t.get("date"), str) and t["date"].startswith(month)
+                t for t in data if isinstance(t.get("date"), str) and t["date"].startswith(month)
             ]
 
         return data
-
 
     def update_transaction(self, row_index: int, data: dict) -> bool:
         """
@@ -181,8 +178,7 @@ class SheetsClient:
 
         if sheet_row_number > len(rows):
             raise IndexError(
-                f"row_index {row_index} is out of range. "
-                f"Tab has {len(rows) - 1} data row(s)."
+                f"row_index {row_index} is out of range. " f"Tab has {len(rows) - 1} data row(s)."
             )
 
         existing = self._row_to_dict(header, rows[sheet_row_number - 1])
@@ -196,11 +192,10 @@ class SheetsClient:
             valueInputOption="USER_ENTERED",
             body={"values": [updated_row]},
         ).execute()
-        
+
         # FIXED G004: Swapped out f-string for standard log parameterization
         logger.info("Updated row %d in '%s'", row_index, _TAB_TRANSACTIONS)
         return True
-
 
     # --------------------------------------------------------
     # PUBLIC — Summary tab
@@ -233,10 +228,9 @@ class SheetsClient:
         self._clear_tab(_TAB_SUMMARY)
         self._write_header(_TAB_SUMMARY, header)
         self._append_rows(_TAB_SUMMARY, rows)
-        
+
         # FIXED G004: Swapped out f-string for standard log parameterization
         logger.info("Written %d summary row(s) to '%s'", len(rows), _TAB_SUMMARY)
-
 
     def read_summary(self) -> list[dict]:
         """
@@ -251,7 +245,6 @@ class SheetsClient:
 
         header = rows[0]
         return [self._row_to_dict(header, row) for row in rows[1:]]
-
 
     # --------------------------------------------------------
     # PUBLIC — Config tab
@@ -272,7 +265,6 @@ class SheetsClient:
         header = rows[0]
         return [self._row_to_dict(header, row) for row in rows[1:]]
 
-
     # --------------------------------------------------------
     # INTERNAL — Low-level Sheets API helpers
     # --------------------------------------------------------
@@ -288,13 +280,12 @@ class SheetsClient:
                     range=tab_name,
                 )
                 .execute()
-                )
+            )
             return result.get("values", [])
         except HttpError:
             # FIXED G201 / G004: Swapped manual error logging out for native exception capture tracking
             logger.exception("Could not read tab '%s'", tab_name)
             return []
-
 
     def _append_rows(self, tab_name: str, rows: list[list]) -> None:
         """Append rows to a tab."""
@@ -306,7 +297,6 @@ class SheetsClient:
             body={"values": rows},
         ).execute()
 
-
     def _write_header(self, tab_name: str, columns: list[str]) -> None:
         """Write the header row to a tab."""
         self._service.spreadsheets().values().update(
@@ -316,7 +306,6 @@ class SheetsClient:
             body={"values": [columns]},
         ).execute()
 
-
     def _clear_tab(self, tab_name: str) -> None:
         """Clear all content from a tab."""
         self._service.spreadsheets().values().clear(
@@ -324,12 +313,10 @@ class SheetsClient:
             range=tab_name,
         ).execute()
 
-
     def _is_tab_empty(self, tab_name: str) -> bool:
         """Return True if the tab has no data."""
         rows = self._read_rows(tab_name)
         return len(rows) == 0
-
 
     # --------------------------------------------------------
     # INTERNAL — Row serialisation helpers
@@ -339,12 +326,10 @@ class SheetsClient:
         """Convert a transaction dict to an ordered list matching _TRANSACTION_COLUMNS."""
         return [str(txn.get(col, "") or "") for col in _TRANSACTION_COLUMNS]
 
-
     def _row_to_dict(self, header: list, row: list) -> dict:
         """Zip a header row and a data row into a dict. Pads short rows with empty strings."""
         padded = row + [""] * (len(header) - len(row))
         return dict(zip(header, padded, strict=False))
-
 
     # --------------------------------------------------------
     # INTERNAL — OAuth2 authentication
@@ -371,9 +356,7 @@ class SheetsClient:
             if creds and creds.expired and creds.refresh_token:
                 creds.refresh(Request())
             else:
-                flow = InstalledAppFlow.from_client_secrets_file(
-                    str(_CREDENTIALS_PATH), _SCOPES
-                )
+                flow = InstalledAppFlow.from_client_secrets_file(str(_CREDENTIALS_PATH), _SCOPES)
                 # Opens browser once for user consent
                 creds = flow.run_local_server(port=0)
 

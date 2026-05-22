@@ -12,6 +12,7 @@ class BaseTool(ABC):
     Abstract Base Class for all enterprise tools.
     Handles LangChain conversion, configuration injection, and standardized error shielding.
     """
+
     name: str
     description: str
     args_schema: type[BaseModel]
@@ -35,12 +36,12 @@ class BaseTool(ABC):
             name=self.name,
             description=self.description,
             args_schema=self.args_schema,
-            func=self._safe_execute
+            func=self._safe_execute,
         )
 
     def _safe_execute(self, *args: Any, **kwargs: Any) -> str:
         """
-        Internal wrapper that provides uniform error logging and a safe fallback string 
+        Internal wrapper that provides uniform error logging and a safe fallback string
         to ensure a broken API call doesn't crash the entire LLM runtime loop.
         """
         try:
@@ -48,8 +49,9 @@ class BaseTool(ABC):
             return self._run(*args, **kwargs)
         except Exception as e:
             import logging
+
             logger = logging.getLogger(__name__)
-            
+
             # FIXED G201 / G004: Used logger.exception with lazy formatting to handle traceback and variables
             logger.exception("Execution error in tool '%s'", self.name)
             return f"Error executing tool '{self.name}': {str(e)}"

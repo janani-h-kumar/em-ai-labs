@@ -4,12 +4,9 @@ from src.providers.base_provider import BaseLLMProvider
 
 
 class ClaudeProvider(BaseLLMProvider):
-
     def __init__(self, config_manager):
         self._config = config_manager
-        self._client = anthropic.Anthropic(
-            api_key=config_manager.get("env.anthropic_api_key")
-        )
+        self._client = anthropic.Anthropic(api_key=config_manager.get("env.anthropic_api_key"))
         self._model = config_manager.get("claude.model", "claude-haiku-4-5-20251001")
 
     def chat_completion(self, messages, system_prompt=None):

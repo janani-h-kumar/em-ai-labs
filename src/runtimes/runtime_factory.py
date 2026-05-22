@@ -21,10 +21,10 @@ RuntimeType = Literal["langchain", "custom"]
 class RuntimeFactory:
     """
     Factory for creating runtime instances based on configuration.
-    
+
     Enables config-driven runtime selection, allowing easy switching
     between different orchestration strategies.
-    
+
     Example:
         config = ConfigManager("configs/config.yaml")
         runtime_type = config.get("runtime.orchestration")  # "langchain"
@@ -33,25 +33,23 @@ class RuntimeFactory:
 
     @staticmethod
     def create(
-        runtime_type: RuntimeType,
-        config_manager: ConfigManager,
-        tools: list[Any] | None = None
+        runtime_type: RuntimeType, config_manager: ConfigManager, tools: list[Any] | None = None
     ) -> BaseRuntime:
         """
         Create runtime instance based on type.
-        
+
         Args:
             runtime_type: "langchain" or "custom"
             config_manager: Configuration manager instance
             tools: Optional list of Tool objects
-        
+
         Returns:
             BaseRuntime subclass instance
-        
+
         Raises:
             ValueError: If runtime type is unknown or initialization fails
             NotImplementedError: If runtime not yet implemented (e.g., custom)
-        
+
         Example:
             runtime = RuntimeFactory.create(
                 runtime_type="langchain",
@@ -75,6 +73,5 @@ class RuntimeFactory:
 
         else:
             raise ValueError(
-                f"Unknown runtime type: {runtime_type}. "
-                f"Valid options: 'langchain', 'custom'"
+                f"Unknown runtime type: {runtime_type}. " f"Valid options: 'langchain', 'custom'"
             )

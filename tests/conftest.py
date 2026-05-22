@@ -23,7 +23,7 @@ def mock_weather_api():
     Patches requests.get in weather_tool so no real HTTP calls are made.
     Returns a realistic London weather payload.
     """
-    with patch('src.tools.weather_tool.requests.get') as mock_get:
+    with patch("src.tools.weather_tool.requests.get") as mock_get:
         mock_response = Mock()
         mock_response.status_code = 200
         mock_response.json.return_value = {
@@ -51,12 +51,12 @@ def mock_ollama_api():
     Patches the OpenAI client used by OllamaClient so no model inference
     is needed to run tests.
     """
-    with patch('src.providers.ollama_provider.OpenAI') as mock_client:
+    with patch("src.providers.ollama_provider.OpenAI") as mock_client:
         mock_response = Mock()
         mock_response.choices = [Mock()]
-        mock_response.choices[0].message.content = (
-            "London is currently cloudy at 15°C — pack a light jacket!"
-        )
+        mock_response.choices[
+            0
+        ].message.content = "London is currently cloudy at 15°C — pack a light jacket!"
         mock_response.usage.prompt_tokens = 45
         mock_response.usage.completion_tokens = 22
         mock_response.usage.total_tokens = 67
@@ -74,7 +74,7 @@ def mock_web_search_api():
     instant-answer API returns results[].FirstURL. Mismatched keys meant
     tests passed while the real code would have silently returned empty URLs.
     """
-    with patch('src.tools.web_search_tool.requests.get') as mock_get:
+    with patch("src.tools.web_search_tool.requests.get") as mock_get:
         mock_response = Mock()
         mock_response.status_code = 200
         # FIX: use 'FirstURL' (real API key), not 'link' (wrong key)

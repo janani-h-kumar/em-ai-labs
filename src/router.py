@@ -1,4 +1,3 @@
-
 import logging
 import re
 from collections import defaultdict
@@ -30,35 +29,59 @@ class MessageRouter:
         # Weather Agent Patterns
         self.agent_patterns["weather"] = [
             # High confidence keywords
-            ("weather", 10), ("temperature", 10), ("forecast", 10),
-            ("rain", 8), ("snow", 8), ("storm", 8), ("humidity", 7),
-            ("hot", 6), ("cold", 6), ("sunny", 6), ("cloudy", 6),
-            ("wind", 6), ("climate", 5), ("degrees", 5),
-
+            ("weather", 10),
+            ("temperature", 10),
+            ("forecast", 10),
+            ("rain", 8),
+            ("snow", 8),
+            ("storm", 8),
+            ("humidity", 7),
+            ("hot", 6),
+            ("cold", 6),
+            ("sunny", 6),
+            ("cloudy", 6),
+            ("wind", 6),
+            ("climate", 5),
+            ("degrees", 5),
             # City/location indicators
-            ("in ", 3), ("at ", 3), ("for ", 3),
-
+            ("in ", 3),
+            ("at ", 3),
+            ("for ", 3),
             # Question patterns
-            ("what's the weather", 12), ("how's the weather", 12),
-            ("is it", 4), ("will it", 4),
+            ("what's the weather", 12),
+            ("how's the weather", 12),
+            ("is it", 4),
+            ("will it", 4),
         ]
 
         # Science Agent Patterns (future)
         self.agent_patterns["science"] = [
-            ("why", 8), ("how does", 10), ("what is", 6),
-            ("science", 8), ("physics", 7), ("chemistry", 7),
-            ("biology", 7), ("space", 6), ("universe", 6),
-            ("earth", 5), ("experiment", 6), ("theory", 5),
+            ("why", 8),
+            ("how does", 10),
+            ("what is", 6),
+            ("science", 8),
+            ("physics", 7),
+            ("chemistry", 7),
+            ("biology", 7),
+            ("space", 6),
+            ("universe", 6),
+            ("earth", 5),
+            ("experiment", 6),
+            ("theory", 5),
         ]
 
         # Setup regex patterns for more complex matching
         self.regex_patterns["weather"] = [
             # City extraction patterns
-            (re.compile(r'weather (?:in|for|at) (\w+)', re.IGNORECASE), 15),
-            (re.compile(r'(?:what\'s|how\'s) (?:the )?weather (?:like )?(?:in )?(\w+)', re.IGNORECASE), 20),
-
+            (re.compile(r"weather (?:in|for|at) (\w+)", re.IGNORECASE), 15),
+            (
+                re.compile(
+                    r"(?:what\'s|how\'s) (?:the )?weather (?:like )?(?:in )?(\w+)", re.IGNORECASE
+                ),
+                20,
+            ),
             # Temperature questions
-            (re.compile(r'(?:how|what) (?:hot|cold) (?:is it|will it be)', re.IGNORECASE), 12),
+            (re.compile(r"(?:how|what) (?:hot|cold) (?:is it|will it be)", re.IGNORECASE), 12),
         ]
 
     def route_message(self, message: str) -> tuple[str, float]:
@@ -94,8 +117,7 @@ class MessageRouter:
             best_agent = max(scores, key=scores.get)
             confidence = min(scores[best_agent] / 20.0, 1.0)  # Normalize to 0-1
 
-            logger.debug(
-                "Routed '%s' to %s (confidence: %.2f)", message, best_agent, confidence)
+            logger.debug("Routed '%s' to %s (confidence: %.2f)", message, best_agent, confidence)
             return best_agent, confidence
 
         # Default fallback
@@ -141,7 +163,7 @@ class MessageRouter:
             "confidence": confidence,
             "matched_keywords": matched_keywords,
             "total_score": scores[agent],
-            "all_scores": dict(scores)
+            "all_scores": dict(scores),
         }
 
 

@@ -9,11 +9,14 @@ from src.tools.base_tool import BaseTool
 
 logger = logging.getLogger(__name__)
 
+
 class WeatherAgentError(Exception):
     pass
 
+
 class WeatherAgentInitError(WeatherAgentError):
     pass
+
 
 class WeatherAgentExecutionError(WeatherAgentError):
     pass
@@ -22,7 +25,7 @@ class WeatherAgentExecutionError(WeatherAgentError):
 class WeatherAgent(BaseAgent):
     """
     Enterprise Weather Agent.
-    
+
     Uses explicit dependency injection for rock-solid predictability and testing.
     """
 
@@ -35,10 +38,8 @@ class WeatherAgent(BaseAgent):
     ):
         # Resolve config path cleanly
         if config_path is None:
-            config_path = str(
-                Path(__file__).parent.parent.parent / "configs" / "config.yaml"
-            )
-            
+            config_path = str(Path(__file__).parent.parent.parent / "configs" / "config.yaml")
+
         super().__init__(config_path=config_path)
 
         # Set system behavior rules
@@ -47,7 +48,9 @@ class WeatherAgent(BaseAgent):
         )
 
         # Assign injected components or establish default production clients
-        self.base_llm_provider: BaseLLMProvider = base_llm_provider or BaseLLMProvider(self.config_manager)
+        self.base_llm_provider: BaseLLMProvider = base_llm_provider or BaseLLMProvider(
+            self.config_manager
+        )
         self.weather_client: BaseTool = weather_client or BaseTool(self.config_manager)
 
     def initialize(self) -> None:
@@ -67,12 +70,25 @@ class WeatherAgent(BaseAgent):
 
         message = message.strip()
         filler = {
-            "what", "whats", "what's", "how", "weather", "is",
-            "the", "in", "at", "for", "today", "tomorrow", "now",
-            "can", "you", "please"
+            "what",
+            "whats",
+            "what's",
+            "how",
+            "weather",
+            "is",
+            "the",
+            "in",
+            "at",
+            "for",
+            "today",
+            "tomorrow",
+            "now",
+            "can",
+            "you",
+            "please",
         }
 
-        candidates = re.findall(r'\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)\b', message)
+        candidates = re.findall(r"\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)\b", message)
         filtered = [c for c in candidates if c.lower() not in filler]
 
         if filtered:
@@ -99,8 +115,7 @@ class WeatherAgent(BaseAgent):
 
             # 3. Request LLM generation
             response = self.base_llm_provider.chat_completion(
-                messages=prompt, 
-                system_prompt=self.system_prompt
+                messages=prompt, system_prompt=self.system_prompt
             )
             return response.strip()
 
@@ -111,13 +126,16 @@ class WeatherAgent(BaseAgent):
                 raise WeatherAgentExecutionError("City not found: {e}") from e
             raise WeatherAgentExecutionError("An error occurred: {e}") from e
 
-    def get_detailed_weather(self, city: str, temperature_units: str = "imperial") -> dict[str, Any]:
+    def get_detailed_weather(
+        self, city: str, temperature_units: str = "imperial"
+    ) -> dict[str, Any]:
         if not city or not city.strip():
             raise ValueError("City must be non-empty")
         return self.weather_client.get_temperature(city.strip())
 
     def health_check(self) -> dict[str, Any]:
         import datetime
+
         return {
             "agent": "WeatherAgent",
             "status": "healthy",

@@ -23,6 +23,7 @@ logger = logging.getLogger(__name__)
 # Exception hierarchy
 # ---------------------------------------------------------------------------
 
+
 class AgentError(Exception):
     """Base exception for all agent failures."""
 
@@ -38,6 +39,7 @@ class AgentExecutionError(AgentError):
 # ---------------------------------------------------------------------------
 # Base class
 # ---------------------------------------------------------------------------
+
 
 class BaseAgent(ABC):
     """
@@ -89,9 +91,7 @@ class BaseAgent(ABC):
         try:
             self.initialize()
             self._initialized = True
-            self.logger.info(
-                "Agent initialised name=%s", self.__class__.__name__
-            )
+            self.logger.info("Agent initialised name=%s", self.__class__.__name__)
         except AgentInitError:
             # Already a typed error — let it propagate as-is
             raise
@@ -102,9 +102,7 @@ class BaseAgent(ABC):
                 self.__class__.__name__,
                 e,
             )
-            raise AgentInitError(
-                f"Failed to initialise {self.__class__.__name__}: {e}"
-            ) from e
+            raise AgentInitError(f"Failed to initialise {self.__class__.__name__}: {e}") from e
 
     # -----------------------------------------------------------------------
     # Abstract interface — subclasses MUST implement both

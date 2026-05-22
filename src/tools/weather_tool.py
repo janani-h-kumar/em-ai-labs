@@ -15,48 +15,53 @@ from src.utils.config_loader import ConfigManager
 
 logger = logging.getLogger(__name__)
 
+
 # --- 1. Schema Input Definition ---
 class WeatherInput(BaseModel):
     city: str = Field(
         description="The name of the city to look up the weather for, e.g., 'New York'"
     )
 
+
 # Custom Exceptions (Compliant with N818: All end with 'Error' suffix)
 class WeatherError(Exception):
     """Base exception for Weather API-related errors"""
+
     pass
+
 
 class WeatherConfigError(WeatherError):
     """Raised when weather configuration loading or validation fails"""
+
     pass
+
 
 class WeatherAPIError(WeatherError):
     """Raised when Weather API request fails"""
+
     pass
+
 
 class CityNotFoundError(WeatherError):
     """Raised when the specified city is not found"""
+
     pass
 
 
 # --- 2. The Core API Client (Pure Data Fetcher) ---
 class WeatherClient:
     """Manages raw interaction with OpenWeatherMap API with circuit breaking."""
-    
+
     def __init__(self, config_manager: ConfigManager):
         self.config = config_manager
         self.api_key = config_manager.get_required("env.OPENWEATHER_API_KEY")
         self.base_url = config_manager.get("env.OPENWEATHER_BASE_URL")
 
         if not self.base_url:
-            raise WeatherConfigError(
-                "OPENWEATHER_BASE_URL must be set in your .env file."
-            )
+            raise WeatherConfigError("OPENWEATHER_BASE_URL must be set in your .env file.")
 
         self._circuit_breaker = CircuitBreaker(
-            failure_threshold=5,
-            recovery_timeout=60,
-            service_name="OpenWeatherMap"
+            failure_threshold=5, recovery_timeout=60, service_name="OpenWeatherMap"
         )
 
         self._validate_connection()
@@ -113,7 +118,7 @@ class WeatherClient:
                 "units": units,
             }
         except (CityNotFoundError, WeatherAPIError):
-            raise 
+            raise
         except requests.Timeout as e:
             # FIXED B904: Added explicit exception chaining via 'from e'
             raise WeatherAPIError(f"Weather API request for '{city}' timed out") from e
@@ -126,6 +131,7 @@ class WeatherClient:
 # --- 3. The LangChain Framework Agent Tool Wrapper ---
 class WeatherTool(BaseTool):
     """LangChain integration interface for the Weather Client."""
+
     name = "weather"
     description = "Get current weather for a city. Input: city name. Output: temperature, condition, humidity."
     args_schema = WeatherInput
@@ -141,6 +147,6 @@ class WeatherTool(BaseTool):
         city = kwargs.get("city") or (args[0] if args else None)
         if not city:
             raise ValueError("City parameter is required.")
-            
+
         # Execute via the local initialized client instance
         return str(self.client.get_temperature(city=city))

@@ -24,15 +24,13 @@ HOSTNAME = socket.gethostname()
 ENVIRONMENT = os.getenv("ENV", "dev")
 
 # Context variable for request correlation across async/threaded calls
-correlation_id: contextvars.ContextVar[str] = contextvars.ContextVar(
-    'correlation_id',
-    default=None
-)
+correlation_id: contextvars.ContextVar[str] = contextvars.ContextVar("correlation_id", default=None)
+
 
 class StructuredFormatter(logging.Formatter):
     """
     Format logs as JSON for easy aggregation and analysis in production.
-    
+
     Output includes:
     - timestamp (ISO 8601)
     - level (DEBUG, INFO, WARNING, ERROR)
@@ -58,7 +56,7 @@ class StructuredFormatter(logging.Formatter):
         }
 
         # Include extra fields if present
-        if hasattr(record, 'extra_data') and isinstance(record.extra_data, dict):
+        if hasattr(record, "extra_data") and isinstance(record.extra_data, dict):
             log_data.update(record.extra_data)
 
         # Include exception info if present
@@ -80,10 +78,10 @@ def get_correlation_id() -> str:
 def setup_structured_logging(log_level: str = "INFO") -> None:
     """
     Initialize structured JSON logging for the application.
-    
+
     Args:
         log_level: Logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
-    
+
     Example:
         from src.utils.logging_utils import setup_structured_logging
         setup_structured_logging("DEBUG")
@@ -92,9 +90,7 @@ def setup_structured_logging(log_level: str = "INFO") -> None:
     console_handler.setFormatter(StructuredFormatter())
 
     file_handler = RotatingFileHandler(
-        "logs/orchestrator.log",
-        maxBytes=10 * 1024 * 1024,
-        backupCount=5
+        "logs/orchestrator.log", maxBytes=10 * 1024 * 1024, backupCount=5
     )
     file_handler.setFormatter(StructuredFormatter())
 
@@ -111,16 +107,17 @@ def setup_structured_logging(log_level: str = "INFO") -> None:
     logger = logging.getLogger(__name__)
     logger.info("Structured logging initialized", extra={"extra_data": {"level": log_level}})
 
+
 def set_correlation_id(request_id: str | None = None) -> str:
     """
     Set or generate correlation ID for request tracing.
-    
+
     Args:
         request_id: Optional request ID. If None, generates a new UUID.
-    
+
     Returns:
         The correlation ID (newly generated or provided)
-    
+
     Example:
         request_id = set_correlation_id("user-123-weather-query")
         # Now all log entries will include this request_id
@@ -133,20 +130,17 @@ def set_correlation_id(request_id: str | None = None) -> str:
 
 
 def log_with_context(
-    logger_obj: logging.Logger,
-    level: str,
-    message: str,
-    **extra_data: Any
+    logger_obj: logging.Logger, level: str, message: str, **extra_data: Any
 ) -> None:
     """
     Log message with extra context data.
-    
+
     Args:
         logger_obj: Logger instance
         level: Level name (DEBUG, INFO, WARNING, ERROR)
         message: Log message
         **extra_data: Additional fields to include in JSON output
-    
+
     Example:
         log_with_context(logger, "INFO", "Request completed", tokens=150, latency_ms=245.5)
     """

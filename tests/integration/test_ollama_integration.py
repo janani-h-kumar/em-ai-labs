@@ -8,7 +8,6 @@ from src.utils.config_loader import ConfigManager
 
 @pytest.mark.integration
 class TestOllamaIntegration:
-
     @pytest.fixture(scope="class")
     def config_manager(self):
         return ConfigManager("configs/config.yaml")
@@ -18,25 +17,16 @@ class TestOllamaIntegration:
         return OllamaClient(config_manager)
 
     def test_simple_prompt_returns_response(self, ollama_client):
-        response = ollama_client.chat_completion(
-            "What is AI?"
-        )
+        response = ollama_client.chat_completion("What is AI?")
 
         assert response is not None
         assert isinstance(response, str)
         assert len(response.strip()) > 0
 
     def test_multi_turn_conversation(self, ollama_client):
-
         conversation = [
-            {
-                "role": "system",
-                "content": "You are a helpful assistant."
-            },
-            {
-                "role": "user",
-                "content": "What is machine learning?"
-            }
+            {"role": "system", "content": "You are a helpful assistant."},
+            {"role": "user", "content": "What is machine learning?"},
         ]
 
         response = ollama_client.chat_completion(conversation)

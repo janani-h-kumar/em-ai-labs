@@ -27,6 +27,7 @@ logger = logging.getLogger(__name__)
 def _count_tokens(text: str, model: str = "gpt-3.5-turbo") -> int:
     try:
         import tiktoken  # noqa: PLC0415
+
         enc = tiktoken.encoding_for_model(model)
         return len(enc.encode(text))
     except (ImportError, KeyError):
@@ -35,19 +36,23 @@ def _count_tokens(text: str, model: str = "gpt-3.5-turbo") -> int:
 
 class LangChainRuntimeError(Exception):
     """Base exception for LangChain runtime errors."""
+
     pass
+
 
 class LangChainRuntimeInitError(LangChainRuntimeError):
     """Initialisation error."""
+
     pass
+
 
 class LangChainRuntimeExecutionError(LangChainRuntimeError):
     """Runtime execution error."""
+
     pass
 
 
 class LangChainRuntime(BaseRuntime):
-
     INVOKE_TIMEOUT_SECONDS = 120
 
     def __init__(
@@ -72,7 +77,7 @@ class LangChainRuntime(BaseRuntime):
                 base_url=ollama_base_url,
                 model=ollama_model,
                 temperature=0.2,
-                num_ctx=2048,           # Crucial for multi-turn to prevent context blowout
+                num_ctx=2048,  # Crucial for multi-turn to prevent context blowout
                 # stop=["Observation:", "Human:"],
             )
 
@@ -86,7 +91,7 @@ class LangChainRuntime(BaseRuntime):
 
             if self.config_manager.get("runtime.warmup_enabled"):
                 self._warmup_model()
-                #threading.Thread(target=self._warmup_model, daemon=True).start()
+                # threading.Thread(target=self._warmup_model, daemon=True).start()
 
         except Exception as e:
             msg = f"Failed to initialise LangChainRuntime: {e}"
@@ -94,7 +99,11 @@ class LangChainRuntime(BaseRuntime):
             logger.error("Failed to initialise LangChainRuntime: %s", e)
             raise LangChainRuntimeInitError(msg) from e
 
-    @retry_with_backoff(max_retries=3, base_delay=1, retryable_exceptions=(requests.Timeout, requests.ConnectionError))
+    @retry_with_backoff(
+        max_retries=3,
+        base_delay=1,
+        retryable_exceptions=(requests.Timeout, requests.ConnectionError),
+    )
     def _verify_ollama_connection(self, base_url: str) -> None:
         url = base_url.rstrip("/") + "/api/tags"
         try:
@@ -129,16 +138,18 @@ class LangChainRuntime(BaseRuntime):
     # -----------------------------------------------------------------------
     def _setup_agent(self) -> AgentExecutor:
         # Prompt explicitly reserves a location for conversation tracking
-        prompt = ChatPromptTemplate.from_messages([
-            (
-                "system",
-                "You are a helpful enterprise AI assistant. Provide concise, accurate responses. "
-                "Use your allocated tools to look up real-time information when required."
-            ),
-            MessagesPlaceholder(variable_name="chat_history"), # Multi-turn window
-            ("human", "{input}"),
-            MessagesPlaceholder(variable_name="agent_scratchpad"),
-        ])
+        prompt = ChatPromptTemplate.from_messages(
+            [
+                (
+                    "system",
+                    "You are a helpful enterprise AI assistant. Provide concise, accurate responses. "
+                    "Use your allocated tools to look up real-time information when required.",
+                ),
+                MessagesPlaceholder(variable_name="chat_history"),  # Multi-turn window
+                ("human", "{input}"),
+                MessagesPlaceholder(variable_name="agent_scratchpad"),
+            ]
+        )
 
         agent = create_tool_calling_agent(llm=self.llm, tools=self.tools, prompt=prompt)
 
@@ -147,7 +158,7 @@ class LangChainRuntime(BaseRuntime):
             tools=self.tools,
             # verbose=True,
             handle_parsing_errors=True,
-            max_execution_time=self.INVOKE_TIMEOUT_SECONDS
+            max_execution_time=self.INVOKE_TIMEOUT_SECONDS,
         )
 
     # -----------------------------------------------------------------------
@@ -155,7 +166,7 @@ class LangChainRuntime(BaseRuntime):
     # -----------------------------------------------------------------------
     def invoke(self, message: str, session_id: str = "default-enterprise-session") -> str:
         """
-        Executes an orchestration turn. Accepts an optional session_id parameter 
+        Executes an orchestration turn. Accepts an optional session_id parameter
         to isolate multi-turn context between distinct users or workflows.
         """
         start_time = time.time()
@@ -175,12 +186,16 @@ class LangChainRuntime(BaseRuntime):
                 future = executor.submit(
                     self.agent_executor.invoke,
                     {"input": message},
-                    config={"configurable": {"session_id": session_id}} # Dictates the memory workspace
+                    config={
+                        "configurable": {"session_id": session_id}
+                    },  # Dictates the memory workspace
                 )
                 try:
                     result = future.result(timeout=self.INVOKE_TIMEOUT_SECONDS)
                 except concurrent.futures.TimeoutError as e:
-                    raise LangChainRuntimeExecutionError("Agent timed out after %d seconds.", self.INVOKE_TIMEOUT_SECONDS) from e
+                    raise LangChainRuntimeExecutionError(
+                        "Agent timed out after %d seconds.", self.INVOKE_TIMEOUT_SECONDS
+                    ) from e
 
             response = result.get("output", "No response generated.")
 
@@ -202,9 +217,7 @@ class LangChainRuntime(BaseRuntime):
         except Exception as e:
             # FIXED G004: Converted to lazy formatting
             logger.error(
-                "Runtime execution failed: %s", 
-                e, 
-                extra={"extra_data": {"request_id": request_id}}
+                "Runtime execution failed: %s", e, extra={"extra_data": {"request_id": request_id}}
             )
             raise LangChainRuntimeExecutionError("Failed to execute: %s", e) from e
 
@@ -221,7 +234,7 @@ class LangChainRuntime(BaseRuntime):
                 get_session_history=self._get_session_history,
                 input_messages_key="input",
                 history_messages_key="chat_history",
-                output_messages_key="output", # Crucial: tells history engine which key to read
+                output_messages_key="output",  # Crucial: tells history engine which key to read
             )
         else:
             self.agent_executor = None

@@ -26,12 +26,13 @@ logger = logging.getLogger(__name__)
 # --- Generic Tool Registry Framework ---
 class ToolConfig:
     """A clean wrapper to define what a tool needs to initialize."""
+
     def __init__(
         self,
         name: str,
         description: str,
         args_schema: type[BaseModel],
-        factory_fn: Callable[[Any], Callable[..., Any]]
+        factory_fn: Callable[[Any], Callable[..., Any]],
     ):
         self.name = name
         self.description = description
@@ -41,6 +42,7 @@ class ToolConfig:
 
 class ToolManager:
     """Handles registry and clean runtime initialization of external agent tools."""
+
     def __init__(self, config_manager: ConfigManager):
         self.config_manager = config_manager
 
@@ -54,7 +56,7 @@ class ToolManager:
                     WeatherClient(manager.config_manager).get_temperature(
                         city=kwargs.get("city") or (args[0] if args else None)
                     )
-                )
+                ),
             ),
             ToolConfig(
                 name="web_search",
@@ -65,7 +67,7 @@ class ToolManager:
                         query=kwargs.get("query") or (args[0] if args else None),
                         num_results=3,
                     )
-                )
+                ),
             ),
         ]
 
@@ -95,6 +97,7 @@ class ToolManager:
 
 # --- Core Orchestrator ---
 
+
 class AgentManager:
     """
     Enterprise agent manager with runtime orchestration.
@@ -109,9 +112,7 @@ class AgentManager:
 
     def __init__(self, config_path: str | None = None):
         if config_path is None:
-            config_path = str(
-                Path(__file__).parent.parent / "configs" / "config.yaml"
-            )
+            config_path = str(Path(__file__).parent.parent / "configs" / "config.yaml")
 
         try:
             logger.info("Loading configuration from: %s", config_path)
@@ -123,9 +124,7 @@ class AgentManager:
             self.tool_manager = ToolManager(self.config_manager)
             self.tools = self.tool_manager.initialize_tools()
 
-            runtime_type = self.config_manager.get(
-                "runtime.orchestration", default="langchain"
-            )
+            runtime_type = self.config_manager.get("runtime.orchestration", default="langchain")
             logger.info("Creating runtime: %s", runtime_type)
             self.runtime = RuntimeFactory.create(
                 runtime_type=runtime_type,
@@ -148,19 +147,24 @@ class AgentManager:
         try:
             logger.info(
                 "Handling message",
-                extra={"extra_data": {
-                    "request_id": request_id,
-                    "message_length": len(message),
-                }},
+                extra={
+                    "extra_data": {
+                        "request_id": request_id,
+                        "message_length": len(message),
+                    }
+                },
             )
 
             agent_name, confidence = self.router.route_message(message)
             logger.info(
-                "Message routed", extra={"extra_data": {
-                    "request_id": request_id,
-                    "agent": agent_name,
-                    "confidence": confidence,
-                }},
+                "Message routed",
+                extra={
+                    "extra_data": {
+                        "request_id": request_id,
+                        "agent": agent_name,
+                        "confidence": confidence,
+                    }
+                },
             )
 
             response = self.runtime.invoke(message)
@@ -169,12 +173,14 @@ class AgentManager:
                 telemetry = self.runtime.get_telemetry()
                 logger.info(
                     "Response generated",
-                    extra={"extra_data": {
-                        "request_id": request_id,
-                        "tokens": telemetry.total_tokens,
-                        "latency_ms": telemetry.latency_ms,
-                        "cache_hit": telemetry.cache_hit,
-                    }},
+                    extra={
+                        "extra_data": {
+                            "request_id": request_id,
+                            "tokens": telemetry.total_tokens,
+                            "latency_ms": telemetry.latency_ms,
+                            "cache_hit": telemetry.cache_hit,
+                        }
+                    },
                 )
 
             return response
@@ -195,14 +201,14 @@ class AgentManager:
         }
 
     def is_initialized(self) -> bool:
-        return hasattr(self, '_initialized') and self._initialized
+        return hasattr(self, "_initialized") and self._initialized
 
 
 def run_interactive_chat():
     """Run interactive chat loop with agent system."""
-    print("\n" + "="*50)
+    print("\n" + "=" * 50)
     print("AI Lab — Agent Orchestration System")
-    print("="*50)
+    print("=" * 50)
     print("Type 'exit' to quit, 'help' for commands\n")
 
     try:
@@ -210,10 +216,7 @@ def run_interactive_chat():
         manager = AgentManager()
         logger.info(
             "Application startup complete",
-            extra={
-                "startup_duration_sec":
-                    round(time.perf_counter() - startup_start, 2)
-            }
+            extra={"startup_duration_sec": round(time.perf_counter() - startup_start, 2)},
         )
     except Exception as e:
         print(f"Failed to initialise: {e}")

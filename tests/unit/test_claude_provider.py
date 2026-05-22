@@ -8,7 +8,10 @@ from src.providers.claude_provider import ClaudeProvider  # Adjust import path i
 # Define the skip condition based on the environment variable
 HAS_API_KEY = "ANTHROPIC_API_KEY" in os.environ
 
-@pytest.mark.skipif(not HAS_API_KEY, reason="Skipping integration test: ANTHROPIC_API_KEY is not set")
+
+@pytest.mark.skipif(
+    not HAS_API_KEY, reason="Skipping integration test: ANTHROPIC_API_KEY is not set"
+)
 def test_claude_provider_health_check_integration():
     # Arrange: Create a real configuration manager that pulls from the environment
     # Alternatively, you can use a Mock if your config_manager usually handles it,
@@ -17,7 +20,7 @@ def test_claude_provider_health_check_integration():
     config_manager.get.side_effect = lambda key, default=None: {
         "env.anthropic_api_key": os.environ.get("ANTHROPIC_API_KEY"),
         "claude.model": "claude-haiku-4-5-20251001",
-        "claude.max_tokens": 1000
+        "claude.max_tokens": 1000,
     }.get(key, default)
 
     provider = ClaudeProvider(config_manager)

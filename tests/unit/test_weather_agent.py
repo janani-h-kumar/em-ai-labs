@@ -15,7 +15,6 @@ from src.utils.config_loader import ConfigValidationError
 
 
 class TestWeatherAgentInitialization:
-
     def test_agent_initializes_successfully(self, config_for_testing):
         """Agent should initialize without raising when components are explicitly passed."""
         mock_llm = Mock()
@@ -23,9 +22,7 @@ class TestWeatherAgentInitialization:
 
         # Instantiate using proper Dependency Injection
         agent = WeatherAgent(
-            config_path=None,
-            base_llm_provider=mock_llm,
-            weather_client=mock_weather
+            config_path=None, base_llm_provider=mock_llm, weather_client=mock_weather
         )
 
         # Inject the test config context manager directly
@@ -65,15 +62,18 @@ class TestExtractCity:
 
 
 class TestWeatherSummary:
-
     def test_get_weather_summary_returns_string(self, config_for_testing):
         """get_weather_summary should return a non-empty string on success."""
         mock_wc = Mock()
         mock_wc.get_temperature.return_value = {
-            "city": "London", "country": "GB",
-            "temperature": 15.2, "feels_like": 14.8,
-            "humidity": 72, "pressure": 1013,
-            "condition": "Cloudy", "description": "overcast clouds",
+            "city": "London",
+            "country": "GB",
+            "temperature": 15.2,
+            "feels_like": 14.8,
+            "humidity": 72,
+            "pressure": 1013,
+            "condition": "Cloudy",
+            "description": "overcast clouds",
             "units": "imperial",
         }
 
@@ -110,8 +110,8 @@ class TestWeatherSummary:
 # ConfigManager tests
 # ---------------------------------------------------------------------------
 
-class TestConfigManager:
 
+class TestConfigManager:
     def test_get_existing_key(self, config_for_testing):
         assert config_for_testing.get("runtime.orchestration") == "langchain"
 
@@ -139,8 +139,8 @@ class TestConfigManager:
 # CircuitBreaker tests
 # ---------------------------------------------------------------------------
 
-class TestCircuitBreaker:
 
+class TestCircuitBreaker:
     def setup_method(self):
         self.cb = CircuitBreaker(
             failure_threshold=3,
@@ -185,8 +185,8 @@ class TestCircuitBreaker:
 # Retry middleware tests
 # ---------------------------------------------------------------------------
 
-class TestRetryWithBackoff:
 
+class TestRetryWithBackoff:
     def test_succeeds_on_first_attempt(self):
         call_count = 0
 

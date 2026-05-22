@@ -29,23 +29,28 @@ logger = logging.getLogger(__name__)
 # Custom Exceptions
 # ---------------------------------------------------------------------------
 
+
 class OllamaError(Exception):
     """Base exception for Ollama-related errors"""
+
     pass
 
 
 class ModelNotFoundError(OllamaError):
     """Raised when the specified model is not found locally"""
+
     pass
 
 
 class OllamaConnectionError(OllamaError):
     """Raised when unable to connect to Ollama server"""
+
     pass
 
 
 class OllamaConfigError(OllamaError):
     """Raised when Ollama configuration is missing or invalid."""
+
     pass
 
 
@@ -53,8 +58,10 @@ class OllamaConfigError(OllamaError):
 # Client
 # ---------------------------------------------------------------------------
 
+
 class OllamaClient(BaseLLMProvider):
     """Manages interaction with a local Ollama server via the OpenAI-compat API."""
+
     @property
     def model_name(self):
         return self.model
@@ -76,9 +83,7 @@ class OllamaClient(BaseLLMProvider):
         self.base_url = self._build_base_url(self.host)
 
         if not self.base_url:
-            raise OllamaConfigError(
-                "OLLAMA_BASE_URL is not set. Add it to your .env file."
-            )
+            raise OllamaConfigError("OLLAMA_BASE_URL is not set. Add it to your .env file.")
 
         # FIX: OLLAMA_API_KEY is optional for local Ollama — use a harmless
         # placeholder if unset so the OpenAI client doesn't raise on init.
@@ -105,8 +110,8 @@ class OllamaClient(BaseLLMProvider):
     def _build_base_url(self, host: str | None) -> str | None:
         if not host:
             return None
-        host = host.rstrip('/')
-        return host if host.endswith('/v1') else f"{host}/v1"
+        host = host.rstrip("/")
+        return host if host.endswith("/v1") else f"{host}/v1"
 
     def _validate_connection(self) -> None:
         """Verify Ollama server is reachable."""
@@ -151,14 +156,9 @@ class OllamaClient(BaseLLMProvider):
             available = [m["name"] for m in response.json().get("models", [])]
 
             if not available:
-                raise ModelNotFoundError(
-                    "No models available. Run: ollama pull <model-name>"
-                )
+                raise ModelNotFoundError("No models available. Run: ollama pull <model-name>")
 
-            model_found = any(
-                self.model in m or m.startswith(self.model)
-                for m in available
-            )
+            model_found = any(self.model in m or m.startswith(self.model) for m in available)
             if not model_found:
                 raise ModelNotFoundError(
                     f"Model '{self.model}' not found. "
@@ -214,8 +214,7 @@ class OllamaClient(BaseLLMProvider):
                 messages = content
             else:
                 raise OllamaError(
-                    f"Invalid content type {type(content)}. "
-                    "Expected str, dict, or list."
+                    f"Invalid content type {type(content)}. " "Expected str, dict, or list."
                 )
 
             logger.info("Sending %s message(s) to model: %s", len(messages), self.model)
@@ -237,12 +236,14 @@ class OllamaClient(BaseLLMProvider):
         try:
             # Example check: pinging your local endpoint, or a lightweight check
             import requests
+
             response = requests.get(f"{self.base_url}/api/tags", timeout=2)
             return {
                 "status": "healthy" if response.status_code == 200 else "unhealthy",
-                "provider": "OllamaClient"
+                "provider": "OllamaClient",
             }
         except Exception as e:
             return {"status": "unhealthy", "error": str(e), "provider": "OllamaClient"}
+
 
 Client = OllamaClient

@@ -61,6 +61,7 @@ logger = logging.getLogger(__name__)
 # PUBLIC ENTRY POINT
 # ============================================================
 
+
 def extract_transactions(
     input_path: str | Path,
     llm_caller: LLMCaller,
@@ -100,11 +101,15 @@ def extract_transactions(
 # INTERNAL — Input handlers
 # ============================================================
 
+
 def _process_directory(dir_path: Path, llm_caller: LLMCaller) -> list[dict]:
-    all_files = sorted([
-        f for f in dir_path.iterdir()
-        if f.suffix.lower() in _SUPPORTED_EXTENSIONS or f.suffix.lower() == ".pdf"
-    ])
+    all_files = sorted(
+        [
+            f
+            for f in dir_path.iterdir()
+            if f.suffix.lower() in _SUPPORTED_EXTENSIONS or f.suffix.lower() == ".pdf"
+        ]
+    )
 
     if not all_files:
         raise ValueError(
@@ -113,12 +118,11 @@ def _process_directory(dir_path: Path, llm_caller: LLMCaller) -> list[dict]:
         )
 
     images = [f for f in all_files if f.suffix.lower() in _SUPPORTED_EXTENSIONS]
-    pdfs   = [f for f in all_files if f.suffix.lower() == ".pdf"]
-    
+    pdfs = [f for f in all_files if f.suffix.lower() == ".pdf"]
+
     # FIXED G004: Swapped out f-string for standard log parameterization
     logger.info(
-        "[vision_extractor] '%s/' — %d image(s), %d PDF(s)", 
-        dir_path.name, len(images), len(pdfs)
+        "[vision_extractor] '%s/' — %d image(s), %d PDF(s)", dir_path.name, len(images), len(pdfs)
     )
 
     all_transactions = []
@@ -155,7 +159,7 @@ def _process_pdf(pdf_path: Path, llm_caller: LLMCaller) -> list[dict]:
     logger.info("[vision_extractor] PDF '%s' — %d page(s)", pdf_path.name, len(doc))
 
     prompt = _build_prompt()
-    
+
     for page_num, page in enumerate(doc, start=1):
         source_label = f"{pdf_path.name} — page {page_num}"
         text = page.get_text("text").strip()
@@ -173,7 +177,7 @@ def _process_pdf(pdf_path: Path, llm_caller: LLMCaller) -> list[dict]:
             os.close(tmp_fd)
             try:
                 pix.save(tmp_path)
-                image_b64 = _encode_image(Path(tmp_path))                
+                image_b64 = _encode_image(Path(tmp_path))
                 raw = llm_caller(prompt, image_b64, "image/png")
             finally:
                 os.unlink(tmp_path)
@@ -187,6 +191,7 @@ def _process_pdf(pdf_path: Path, llm_caller: LLMCaller) -> list[dict]:
 # ============================================================
 # INTERNAL — Prompt builder
 # ============================================================
+
 
 def _build_prompt(extracted_text: str | None = None) -> str:
     """
@@ -242,6 +247,7 @@ Rules:
 # INTERNAL — Response parser
 # ============================================================
 
+
 def _parse_response(raw: str, source_file: str) -> list[dict]:
     """Parse LLM JSON response. Attaches source_file and applies field defaults."""
     cleaned = raw.strip()
@@ -264,8 +270,7 @@ def _parse_response(raw: str, source_file: str) -> list[dict]:
     if not isinstance(transactions, list):
         # FIXED G004: Swapped out f-strings for standard log parameterization
         logger.warning(
-            "   [WARNING] Expected list, got %s for '%s'", 
-            type(transactions).__name__, source_file
+            "   [WARNING] Expected list, got %s for '%s'", type(transactions).__name__, source_file
         )
         return []
 
@@ -284,6 +289,7 @@ def _parse_response(raw: str, source_file: str) -> list[dict]:
 # INTERNAL — Helpers
 # ============================================================
 
+
 def _encode_image(image_path: Path) -> str:
     with open(image_path, "rb") as f:
         return base64.standard_b64encode(f.read()).decode("utf-8")
@@ -291,10 +297,10 @@ def _encode_image(image_path: Path) -> str:
 
 def _get_media_type(image_path: Path) -> str:
     return {
-        ".jpg":  "image/jpeg",
+        ".jpg": "image/jpeg",
         ".jpeg": "image/jpeg",
-        ".png":  "image/png",
+        ".png": "image/png",
         ".webp": "image/webp",
-        ".bmp":  "image/bmp",
+        ".bmp": "image/bmp",
         ".tiff": "image/tiff",
     }.get(image_path.suffix.lower(), "image/jpeg")

@@ -17,7 +17,7 @@ from functools import wraps
 from typing import Any, TypeVar
 
 logger = logging.getLogger(__name__)
-F = TypeVar('F', bound=Callable[..., Any])
+F = TypeVar("F", bound=Callable[..., Any])
 
 # Errors that are worth retrying — transient network/infra problems.
 # Import lazily to avoid circular imports; add your own as needed.
@@ -84,18 +84,23 @@ def retry_with_backoff(
                     # FIX: Don't retry permanent failures — fail fast.
                     if not isinstance(e, effective_retryable):
                         logger.debug(
-                            "%s raised non-retryable "
-                            "%s, failing immediately.", func.__name__, type(e).__name__
+                            "%s raised non-retryable " "%s, failing immediately.",
+                            func.__name__,
+                            type(e).__name__,
                         )
                         raise
 
                     if attempt < max_retries - 1:
-                        delay = base_delay * (backoff_factor ** attempt)
+                        delay = base_delay * (backoff_factor**attempt)
                         jitter = delay * jitter_factor * (2 * random.random() - 1)
                         sleep_time = max(0.0, delay + jitter)
                         logger.warning(
-                            "%s failed (attempt %d/%d), "
-                            "retrying in %.2f}s: %s", func.__name__, attempt + 1, max_retries, sleep_time, str(e)[:100]
+                            "%s failed (attempt %d/%d), " "retrying in %.2f}s: %s",
+                            func.__name__,
+                            attempt + 1,
+                            max_retries,
+                            sleep_time,
+                            str(e)[:100],
                         )
                         time.sleep(sleep_time)
                     else:
@@ -105,4 +110,5 @@ def retry_with_backoff(
             raise last_exception  # type: ignore[misc]
 
         return wrapper  # type: ignore[return-value]
+
     return decorator

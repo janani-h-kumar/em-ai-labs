@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 class RuntimeTelemetry:
     """
     Execution telemetry for monitoring and optimization.
-    
+
     Attributes:
         input_tokens: Number of input tokens
         output_tokens: Number of output tokens
@@ -26,6 +26,7 @@ class RuntimeTelemetry:
         cache_hit: Whether result was from cache
         model: Model name used for execution
     """
+
     input_tokens: int
     output_tokens: int
     total_tokens: int
@@ -37,10 +38,10 @@ class RuntimeTelemetry:
 class BaseRuntime(ABC):
     """
     Abstract base class for orchestration runtimes.
-    
+
     All runtimes must implement invoke() to process messages.
     Optional helper methods for tool management and telemetry.
-    
+
     Example:
         class MyRuntime(BaseRuntime):
             def invoke(self, message: str) -> str:
@@ -51,7 +52,7 @@ class BaseRuntime(ABC):
     def __init__(self, name: str = "BaseRuntime"):
         """
         Initialize runtime.
-        
+
         Args:
             name: Name of runtime for logging
         """
@@ -64,13 +65,13 @@ class BaseRuntime(ABC):
     def invoke(self, message: str) -> str:
         """
         Process a message and return response.
-        
+
         Args:
             message: Input message/query
-        
+
         Returns:
             Response string
-        
+
         Raises:
             RuntimeError: If execution fails
         """
@@ -79,23 +80,20 @@ class BaseRuntime(ABC):
     def set_tools(self, tools: list[Any]) -> None:
         """
         Inject tools into runtime (optional).
-        
+
         Allows tools to be set after initialization.
-        
+
         Args:
             tools: List of Tool objects or clients
         """
         self.tools = tools
-        tool_names = [
-            t.name if hasattr(t, 'name') else str(t)
-            for t in tools
-        ]
+        tool_names = [t.name if hasattr(t, "name") else str(t) for t in tools]
         logger.debug("Tools injected: %s", tool_names)
 
     def get_telemetry(self) -> RuntimeTelemetry | None:
         """
         Return telemetry from last execution.
-        
+
         Returns:
             RuntimeTelemetry object or None if not available
         """
@@ -104,10 +102,10 @@ class BaseRuntime(ABC):
     def health_check(self) -> dict[str, Any]:
         """
         Return runtime health status for monitoring.
-        
+
         Returns:
             Dict with status, dependencies, etc.
-            
+
         Example:
             {
                 "runtime": "LangChainRuntime",

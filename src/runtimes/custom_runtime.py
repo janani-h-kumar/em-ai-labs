@@ -16,6 +16,7 @@ logger = logging.getLogger(__name__)
 
 class CustomRuntimeNotImplementedError(Exception):
     """Raised when custom runtime is selected but not implemented."""
+
     pass
 
 
@@ -38,5 +39,5 @@ class CustomRuntime(BaseRuntime):
         return {
             "runtime": self.name,
             "status": "not_implemented",
-            "message": "Custom runtime is not implemented yet."
+            "message": "Custom runtime is not implemented yet.",
         }

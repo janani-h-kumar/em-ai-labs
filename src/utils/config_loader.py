@@ -17,11 +17,13 @@ logger = logging.getLogger(__name__)
 
 class ConfigError(Exception):
     """Raised when configuration loading fails (file/YAML issues)."""
+
     pass
 
 
 class ConfigValidationError(ConfigError):
     """Raised when required configuration validation fails."""
+
     pass
 
 
@@ -74,10 +76,7 @@ class ConfigManager:
 
         base_env_file = env_root / ".env"
 
-        app_env = (
-            os.getenv("APP_ENV")
-            or "dev"
-        ).lower()
+        app_env = (os.getenv("APP_ENV") or "dev").lower()
 
         env_specific_file = env_root / f".env.{app_env}"
 
@@ -160,8 +159,7 @@ class ConfigManager:
 
         if missing:
             raise ConfigValidationError(
-                "Missing required configuration:\n"
-                + "\n".join(f"  - {k}" for k in missing)
+                "Missing required configuration:\n" + "\n".join(f"  - {k}" for k in missing)
             )
 
         logger.info("All required configuration validated")
@@ -182,6 +180,7 @@ class ConfigManager:
 # ----------------------------
 # Backward compatibility
 # ----------------------------
+
 
 def load_config(config_path: str) -> dict[str, Any]:
     return ConfigManager(config_path).get_all()

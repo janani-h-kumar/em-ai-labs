@@ -10,8 +10,8 @@ from .circuit_breaker import CircuitBreaker, CircuitBreakerOpenError, CircuitSta
 from .retry import retry_with_backoff
 
 __all__ = [
-    'retry_with_backoff',
-    'CircuitBreaker',
-    'CircuitBreakerOpenError',
-    'CircuitState',
+    "retry_with_backoff",
+    "CircuitBreaker",
+    "CircuitBreakerOpenError",
+    "CircuitState",
 ]
