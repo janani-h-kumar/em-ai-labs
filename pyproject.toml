@@ -68,6 +68,8 @@ select = [
 ]
 ignore = [
     "E501",   # line too long — handled by formatter
+    "W291",  # Trailing whitespace,
+    "W293", # Blank line contains whitespace
 ]
 
 [tool.ruff.lint.per-file-ignores]

@@ -1,11 +1,10 @@
 import pytest
 
 from src.utils.config_loader import (
-    ConfigManager,
     ConfigError,
+    ConfigManager,
     ConfigValidationError,
 )
-
 
 # -------------------------------------------------
 # Helper: create valid base config

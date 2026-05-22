@@ -31,14 +31,13 @@
 
 import base64
 import json
+import logging
 import os
 import tempfile
-import logging
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable, Union
 
 import fitz  # PyMuPDF
-
 
 # ============================================================
 # Load config (language-agnostic JSON)
@@ -46,7 +45,7 @@ import fitz  # PyMuPDF
 
 _CONFIG_PATH = Path(__file__).parent.parent.parent / "configs" / "vision_config.json"
 
-with open(_CONFIG_PATH, "r", encoding="utf-8") as _f:
+with open(_CONFIG_PATH, encoding="utf-8") as _f:
     _CONFIG = json.load(_f)
 
 _CATEGORIES: list[str] = _CONFIG["categories"]
@@ -54,7 +53,7 @@ _DEFAULT_CURRENCY: str = _CONFIG["default_currency"]
 _SUPPORTED_EXTENSIONS: set[str] = set(_CONFIG["supported_image_extensions"])
 
 # Type alias for clarity
-LLMCaller = Callable[[str, Union[str, None], Union[str, None]], str]
+LLMCaller = Callable[[str, str | None, str | None], str]
 
 logger = logging.getLogger(__name__)
 
@@ -63,7 +62,7 @@ logger = logging.getLogger(__name__)
 # ============================================================
 
 def extract_transactions(
-    input_path: Union[str, Path],
+    input_path: str | Path,
     llm_caller: LLMCaller,
 ) -> list[dict]:
     """
@@ -115,11 +114,17 @@ def _process_directory(dir_path: Path, llm_caller: LLMCaller) -> list[dict]:
 
     images = [f for f in all_files if f.suffix.lower() in _SUPPORTED_EXTENSIONS]
     pdfs   = [f for f in all_files if f.suffix.lower() == ".pdf"]
-    logger.info(f"[vision_extractor] '{dir_path.name}/' — {len(images)} image(s), {len(pdfs)} PDF(s)")
+    
+    # FIXED G004: Swapped out f-string for standard log parameterization
+    logger.info(
+        "[vision_extractor] '%s/' — %d image(s), %d PDF(s)", 
+        dir_path.name, len(images), len(pdfs)
+    )
 
     all_transactions = []
     for f in all_files:
-        logger.info(f"  -> {f.name}")
+        # FIXED G004: Swapped out f-string for standard log parameterization
+        logger.info("   -> %s", f.name)
         if f.suffix.lower() == ".pdf":
             all_transactions.extend(_process_pdf(f, llm_caller))
         else:
@@ -146,7 +151,8 @@ def _process_pdf(pdf_path: Path, llm_caller: LLMCaller) -> list[dict]:
     doc = fitz.open(str(pdf_path))
     all_transactions = []
 
-    logger.info(f"[vision_extractor] PDF '{pdf_path.name}' — {len(doc)} page(s)")
+    # FIXED G004: Swapped out f-string for standard log parameterization
+    logger.info("[vision_extractor] PDF '%s' — %d page(s)", pdf_path.name, len(doc))
 
     prompt = _build_prompt()
     
@@ -155,11 +161,13 @@ def _process_pdf(pdf_path: Path, llm_caller: LLMCaller) -> list[dict]:
         text = page.get_text("text").strip()
 
         if len(text) > 100:
-            logger.info(f"  -> Page {page_num}: text mode")
+            # FIXED G004: Swapped out f-string for standard log parameterization
+            logger.info("   -> Page %d: text mode", page_num)
             prompt = _build_prompt(extracted_text=text)
             raw = llm_caller(prompt, None, None)
         else:
-            logger.info(f"  -> Page {page_num}: vision mode (scanned or image-only)")
+            # FIXED G004: Swapped out f-string for standard log parameterization
+            logger.info("   -> Page %d: vision mode (scanned or image-only)", page_num)
             pix = page.get_pixmap(dpi=150)
             tmp_fd, tmp_path = tempfile.mkstemp(suffix=".png")
             os.close(tmp_fd)
@@ -248,12 +256,17 @@ def _parse_response(raw: str, source_file: str) -> list[dict]:
     try:
         transactions = json.loads(cleaned)
     except json.JSONDecodeError as e:
-        logger.warning(f"  [WARNING] JSON parse failed for '{source_file}': {e}")
-        logger.info(f"  Response preview: {raw[:300]}")
+        # FIXED G004: Swapped out f-strings for standard log parameterization
+        logger.warning("   [WARNING] JSON parse failed for '%s': %s", source_file, e)
+        logger.info("   Response preview: %s", raw[:300])
         return []
 
     if not isinstance(transactions, list):
-        logger.warning(f"  [WARNING] Expected list, got {type(transactions).__name__} for '{source_file}'")
+        # FIXED G004: Swapped out f-strings for standard log parameterization
+        logger.warning(
+            "   [WARNING] Expected list, got %s for '%s'", 
+            type(transactions).__name__, source_file
+        )
         return []
 
     for txn in transactions:

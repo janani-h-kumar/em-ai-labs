@@ -1,7 +1,6 @@
 
 import logging
 import re
-from typing import Dict, List, Tuple
 from collections import defaultdict
 
 logger = logging.getLogger(__name__)
@@ -21,8 +20,8 @@ class MessageRouter:
 
     def __init__(self):
         """Initialize router with agent patterns"""
-        self.agent_patterns: Dict[str, List[Tuple[str, int]]] = {}
-        self.regex_patterns: Dict[str, List[Tuple[re.Pattern, int]]] = {}
+        self.agent_patterns: dict[str, list[tuple[str, int]]] = {}
+        self.regex_patterns: dict[str, list[tuple[re.Pattern, int]]] = {}
         self._setup_patterns()
 
     def _setup_patterns(self) -> None:
@@ -62,7 +61,7 @@ class MessageRouter:
             (re.compile(r'(?:how|what) (?:hot|cold) (?:is it|will it be)', re.IGNORECASE), 12),
         ]
 
-    def route_message(self, message: str) -> Tuple[str, float]:
+    def route_message(self, message: str) -> tuple[str, float]:
         """
         Route message to appropriate agent with confidence score
 
@@ -95,14 +94,15 @@ class MessageRouter:
             best_agent = max(scores, key=scores.get)
             confidence = min(scores[best_agent] / 20.0, 1.0)  # Normalize to 0-1
 
-            logger.debug(f"Routed '{message}' to {best_agent} (confidence: {confidence:.2f})")
+            logger.debug(
+                "Routed '%s' to %s (confidence: %.2f)", message, best_agent, confidence)
             return best_agent, confidence
 
         # Default fallback
-        logger.debug(f"No matching agent for '{message}', using general")
+        logger.debug("No matching agent for '%s', using general", message)
         return "general", 0.0
 
-    def get_available_agents(self) -> List[str]:
+    def get_available_agents(self) -> list[str]:
         """
         Get list of available agents
 
@@ -111,7 +111,7 @@ class MessageRouter:
         """
         return list(self.agent_patterns.keys()) + ["general"]
 
-    def explain_routing(self, message: str) -> Dict[str, any]:
+    def explain_routing(self, message: str) -> dict[str, any]:
         """
         Explain why a message was routed to a particular agent
 

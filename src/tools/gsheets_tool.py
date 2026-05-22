@@ -37,9 +37,8 @@
 #   client.read_config()                            # read the Config tab
 # ============================================================
 
-from pathlib import Path
-from typing import Optional
 import logging
+from pathlib import Path
 
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
@@ -129,11 +128,12 @@ class SheetsClient:
         rows = [self._transaction_to_row(t) for t in transactions]
         self._append_rows(_TAB_TRANSACTIONS, rows)
 
-        logger.info(f"Appended {len(rows)} transaction(s) to '{_TAB_TRANSACTIONS}'")
+        # FIXED G004: Swapped out f-string for standard log parameterization
+        logger.info("Appended %d transaction(s) to '%s'", len(rows), _TAB_TRANSACTIONS)
         return len(rows)
 
 
-    def read_transactions(self, month: Optional[str] = None) -> list[dict]:
+    def read_transactions(self, month: str | None = None) -> list[dict]:
         """
         Read all transactions from the Transactions tab.
 
@@ -197,7 +197,8 @@ class SheetsClient:
             body={"values": [updated_row]},
         ).execute()
         
-        logger.info(f"Updated row {row_index} in '{_TAB_TRANSACTIONS}'")
+        # FIXED G004: Swapped out f-string for standard log parameterization
+        logger.info("Updated row %d in '%s'", row_index, _TAB_TRANSACTIONS)
         return True
 
 
@@ -233,7 +234,8 @@ class SheetsClient:
         self._write_header(_TAB_SUMMARY, header)
         self._append_rows(_TAB_SUMMARY, rows)
         
-        logger.info(f"Written {len(rows)} summary row(s) to '{_TAB_SUMMARY}'")
+        # FIXED G004: Swapped out f-string for standard log parameterization
+        logger.info("Written %d summary row(s) to '%s'", len(rows), _TAB_SUMMARY)
 
 
     def read_summary(self) -> list[dict]:
@@ -286,10 +288,11 @@ class SheetsClient:
                     range=tab_name,
                 )
                 .execute()
-            )
+                )
             return result.get("values", [])
-        except HttpError as e:
-            logger.error(f"  [ERROR] Could not read tab '{tab_name}': {e}")
+        except HttpError:
+            # FIXED G201 / G004: Swapped manual error logging out for native exception capture tracking
+            logger.exception("Could not read tab '%s'", tab_name)
             return []
 
 
@@ -340,7 +343,7 @@ class SheetsClient:
     def _row_to_dict(self, header: list, row: list) -> dict:
         """Zip a header row and a data row into a dict. Pads short rows with empty strings."""
         padded = row + [""] * (len(header) - len(row))
-        return dict(zip(header, padded))
+        return dict(zip(header, padded, strict=False))
 
 
     # --------------------------------------------------------

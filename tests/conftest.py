@@ -10,8 +10,9 @@ Changes from original:
 - Added explicit docstrings explaining what each fixture simulates.
 """
 
-import pytest
 from unittest.mock import Mock, patch
+
+import pytest
 
 
 @pytest.fixture

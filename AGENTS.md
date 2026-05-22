@@ -143,7 +143,7 @@ logger.info("Initializing agent...")
 logger.debug("Fetching data...")
 
 # Log errors
-logger.error(f"Failed to fetch: {e}")
+logger.error("Failed to fetch: ") from e
 ```
 
 ### 4. **Type Hints & Docstrings**
@@ -310,8 +310,8 @@ class WeatherAgent:
             )
             logger.info("Agent initialized")
         except Exception as e:
-            logger.error(f"Init failed: {e}")
-            raise WeatherAgentInitError(f"Failed to initialize: {e}")
+            logger.error("Init failed: ", e)
+            raise WeatherAgentInitError("Failed to initialize: {e}") from e
 
     def get_weather_summary(self, city: str) -> str:
         """Get summary with full error handling"""

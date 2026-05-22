@@ -1,3 +1,3 @@
-from .ollama_provider import OllamaClient, OllamaError, OllamaConnectionError
+from .ollama_provider import OllamaClient, OllamaConnectionError, OllamaError
 
 __all__ = ["OllamaClient", "OllamaError", "OllamaConnectionError"]

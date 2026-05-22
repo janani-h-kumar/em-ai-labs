@@ -6,7 +6,7 @@ runtime (LangChain, custom, etc.) based on configuration settings.
 """
 
 import logging
-from typing import Literal, Optional, List, Any
+from typing import Any, Literal
 
 from src.runtimes.base_runtime import BaseRuntime
 from src.runtimes.langchain_runtime import LangChainRuntime
@@ -30,12 +30,12 @@ class RuntimeFactory:
         runtime_type = config.get("runtime.orchestration")  # "langchain"
         runtime = RuntimeFactory.create(runtime_type, config, tools)
     """
-    
+
     @staticmethod
     def create(
         runtime_type: RuntimeType,
         config_manager: ConfigManager,
-        tools: Optional[List[Any]] = None
+        tools: list[Any] | None = None
     ) -> BaseRuntime:
         """
         Create runtime instance based on type.
@@ -60,11 +60,11 @@ class RuntimeFactory:
             )
         """
         runtime_type = runtime_type.lower().strip()
-        
+
         if runtime_type == "langchain":
             logger.info("Creating LangChainRuntime...")
             return LangChainRuntime(config_manager, tools)
-        
+
         elif runtime_type == "custom":
             error_msg = (
                 "Custom runtime not yet implemented (Phase 2). "
@@ -72,7 +72,7 @@ class RuntimeFactory:
             )
             logger.error(error_msg)
             raise NotImplementedError(error_msg)
-        
+
         else:
             raise ValueError(
                 f"Unknown runtime type: {runtime_type}. "

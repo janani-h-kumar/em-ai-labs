@@ -5,17 +5,17 @@ Provides JSON-formatted logging with correlation IDs for request tracing
 and production debugging.
 """
 
+import contextvars
 import json
 import logging
-import sys
-import uuid
-import contextvars
 import os
 import socket
-from typing import Optional, Any
+import sys
+import uuid
 from datetime import datetime
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
+from typing import Any
 
 Path("logs").mkdir(exist_ok=True)
 
@@ -42,7 +42,7 @@ class StructuredFormatter(logging.Formatter):
     - service name
     - exception info (if present)
     """
-    
+
     def format(self, record: logging.LogRecord) -> str:
         """Format log record as JSON."""
         log_data = {
@@ -54,18 +54,18 @@ class StructuredFormatter(logging.Formatter):
             "log_version": 1,
             "service": SERVICE_NAME,
             "environment": ENVIRONMENT,
-            "host": HOSTNAME,            
+            "host": HOSTNAME,
         }
-        
+
         # Include extra fields if present
         if hasattr(record, 'extra_data') and isinstance(record.extra_data, dict):
             log_data.update(record.extra_data)
-        
+
         # Include exception info if present
         if record.exc_info:
             log_data["exception"] = self.formatException(record.exc_info)
             log_data["exc_type"] = record.exc_info[0].__name__ if record.exc_info[0] else None
-        
+
         return json.dumps(log_data, default=str)
 
 
@@ -100,18 +100,18 @@ def setup_structured_logging(log_level: str = "INFO") -> None:
 
     root_logger = logging.getLogger()
     root_logger.setLevel(getattr(logging, log_level.upper(), logging.INFO))
-       
+
     # Remove existing handlers to avoid duplicates
     for h in root_logger.handlers[:]:
         root_logger.removeHandler(h)
-    
+
     root_logger.addHandler(console_handler)
-    root_logger.addHandler(file_handler)    
-    
+    root_logger.addHandler(file_handler)
+
     logger = logging.getLogger(__name__)
     logger.info("Structured logging initialized", extra={"extra_data": {"level": log_level}})
 
-def set_correlation_id(request_id: Optional[str] = None) -> str:
+def set_correlation_id(request_id: str | None = None) -> str:
     """
     Set or generate correlation ID for request tracing.
     
@@ -148,8 +148,7 @@ def log_with_context(
         **extra_data: Additional fields to include in JSON output
     
     Example:
-        log_with_context(logger, "INFO", "Request completed", 
-                        tokens=150, latency_ms=245.5)
+        log_with_context(logger, "INFO", "Request completed", tokens=150, latency_ms=245.5)
     """
     log_level = getattr(logging, level.upper(), logging.INFO)
     if extra_data:

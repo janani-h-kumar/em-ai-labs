@@ -1,20 +1,15 @@
 """
 Enterprise configuration manager — minimally hardened production version.
 
-Key improvements:
-- FAIL FAST if config file is missing
-- Strict YAML error handling
-- Clear ConfigError / ConfigValidationError separation
-- Safe env loading (.env + optional environment-specific overrides)
-- Explicit startup validation (no silent failures)
 """
 
-import os
-import yaml
 import logging
-from pathlib import Path
-from typing import Dict, Any, Optional
+import os
 from dataclasses import dataclass, field
+from pathlib import Path
+from typing import Any
+
+import yaml
 from dotenv import dotenv_values
 
 logger = logging.getLogger(__name__)
@@ -41,16 +36,16 @@ class ConfigManager:
     """
 
     config_path: str
-    _config: Dict[str, Any] = field(init=False, default_factory=dict)
+    _config: dict[str, Any] = field(init=False, default_factory=dict)
 
     def __post_init__(self):
         self._config = self._load_config()
 
-    def _load_config(self) -> Dict[str, Any]:
+    def _load_config(self) -> dict[str, Any]:
         """Load YAML config and environment variables."""
 
         config_file = Path(self.config_path)
-        config: Dict[str, Any] = {}
+        config: dict[str, Any] = {}
 
         # ----------------------------
         # 1. FAIL FAST if file missing
@@ -62,13 +57,13 @@ class ConfigManager:
         # 2. Load YAML safely
         # ----------------------------
         try:
-            with open(config_file, "r", encoding="utf-8") as f:
+            with open(config_file, encoding="utf-8") as f:
                 config = yaml.safe_load(f) or {}
-            logger.info(f"Loaded YAML from {self.config_path}")
+            logger.info("Loaded YAML from %s", self.config_path)
         except yaml.YAMLError as e:
-            raise ConfigError(f"Invalid YAML format: {e}")
+            raise ConfigError(f"Invalid YAML format: {e}") from e
         except Exception as e:
-            raise ConfigError(f"Failed to load config file: {e}")
+            raise ConfigError(f"Failed to load config file: {e}") from e
 
         # ----------------------------
         # 3. ENV loading (.env + override)
@@ -94,7 +89,7 @@ class ConfigManager:
 
         # 2. Override with env-specific .env.<env>
         if env_specific_file.exists():
-            logger.info(f"Loading environment-specific keys from {env_specific_file.name}")
+            logger.info("Loading environment-specific keys from %s", env_specific_file.name)
             env_specific = dotenv_values(dotenv_path=env_specific_file)
             config["env"].update(env_specific)
 
@@ -108,7 +103,7 @@ class ConfigManager:
     # Public API
     # ----------------------------
 
-    def get(self, key: str, default: Optional[Any] = None) -> Any:
+    def get(self, key: str, default: Any | None = None) -> Any:
         """Get config using dot notation (e.g., 'env.OLLAMA_BASE_URL')."""
         keys = key.split(".")
         value = self._config
@@ -132,7 +127,7 @@ class ConfigManager:
 
         return value
 
-    def get_all(self) -> Dict[str, Any]:
+    def get_all(self) -> dict[str, Any]:
         """Return full config (copy)."""
         return self._config.copy()
 
@@ -188,5 +183,5 @@ class ConfigManager:
 # Backward compatibility
 # ----------------------------
 
-def load_config(config_path: str) -> Dict[str, Any]:
+def load_config(config_path: str) -> dict[str, Any]:
     return ConfigManager(config_path).get_all()

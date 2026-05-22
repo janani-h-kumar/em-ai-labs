@@ -5,10 +5,10 @@ All runtimes must implement this interface to provide consistent
 orchestration capabilities for agents.
 """
 
-from abc import ABC, abstractmethod
-from typing import List, Dict, Optional, Any
-from dataclasses import dataclass
 import logging
+from abc import ABC, abstractmethod
+from dataclasses import dataclass
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -47,7 +47,7 @@ class BaseRuntime(ABC):
                 # Process message and return response
                 return "response"
     """
-    
+
     def __init__(self, name: str = "BaseRuntime"):
         """
         Initialize runtime.
@@ -56,10 +56,10 @@ class BaseRuntime(ABC):
             name: Name of runtime for logging
         """
         self.name = name
-        self.telemetry: Optional[RuntimeTelemetry] = None
-        self.tools: List[Any] = []
-        logger.info(f"Initializing {name}")
-    
+        self.telemetry: RuntimeTelemetry | None = None
+        self.tools: list[Any] = []
+        logger.info("Initializing %s", name)
+
     @abstractmethod
     def invoke(self, message: str) -> str:
         """
@@ -75,8 +75,8 @@ class BaseRuntime(ABC):
             RuntimeError: If execution fails
         """
         pass
-    
-    def set_tools(self, tools: List[Any]) -> None:
+
+    def set_tools(self, tools: list[Any]) -> None:
         """
         Inject tools into runtime (optional).
         
@@ -90,9 +90,9 @@ class BaseRuntime(ABC):
             t.name if hasattr(t, 'name') else str(t)
             for t in tools
         ]
-        logger.debug(f"Tools injected: {tool_names}")
-    
-    def get_telemetry(self) -> Optional[RuntimeTelemetry]:
+        logger.debug("Tools injected: %s", tool_names)
+
+    def get_telemetry(self) -> RuntimeTelemetry | None:
         """
         Return telemetry from last execution.
         
@@ -100,8 +100,8 @@ class BaseRuntime(ABC):
             RuntimeTelemetry object or None if not available
         """
         return self.telemetry
-    
-    def health_check(self) -> Dict[str, Any]:
+
+    def health_check(self) -> dict[str, Any]:
         """
         Return runtime health status for monitoring.
         

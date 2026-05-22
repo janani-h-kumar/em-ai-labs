@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import Union
+
 
 class BaseLLMProvider(ABC):
     """
@@ -10,7 +10,7 @@ class BaseLLMProvider(ABC):
     @abstractmethod
     def chat_completion(
         self,
-        messages: Union[str, list[dict]],
+        messages: str | list[dict],
         system_prompt: str | None = None,
     ) -> str:
         """

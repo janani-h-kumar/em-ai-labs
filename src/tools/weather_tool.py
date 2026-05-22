@@ -4,12 +4,14 @@ Integrated with BaseTool architectural pattern.
 """
 
 import logging
+from typing import Any
+
 import requests
-from typing import Dict, Any
 from pydantic import BaseModel, Field
-from src.utils.config_loader import ConfigManager
+
 from src.middleware.circuit_breaker import CircuitBreaker
 from src.tools.base_tool import BaseTool
+from src.utils.config_loader import ConfigManager
 
 logger = logging.getLogger(__name__)
 
@@ -19,7 +21,7 @@ class WeatherInput(BaseModel):
         description="The name of the city to look up the weather for, e.g., 'New York'"
     )
 
-# Custom Exceptions
+# Custom Exceptions (Compliant with N818: All end with 'Error' suffix)
 class WeatherError(Exception):
     """Base exception for Weather API-related errors"""
     pass
@@ -63,24 +65,27 @@ class WeatherClient:
     def _validate_connection(self) -> None:
         try:
             response = requests.head(self.base_url, timeout=5)
-            logger.info(f"Weather API reachable (status {response.status_code})")
-        except requests.ConnectionError:
+            logger.info("Weather API reachable (status %s)", response.status_code)
+        except requests.ConnectionError as e:
+            # FIXED B904: Added explicit exception chaining via 'from e'
             raise WeatherAPIError(
                 f"Cannot reach Weather API at {self.base_url}. Check network."
-            )
-        except requests.Timeout:
+            ) from e
+        except requests.Timeout as e:
+            # FIXED B904: Added explicit exception chaining via 'from e'
             raise WeatherAPIError(
                 f"Weather API at {self.base_url} did not respond within 5s."
-            )
+            ) from e
 
-    def get_temperature(self, city: str, units: str = "imperial") -> Dict[str, Any]:
+    def get_temperature(self, city: str, units: str = "imperial") -> dict[str, Any]:
         if not city or not isinstance(city, str) or not city.strip():
             raise ValueError("City name must be a non-empty string")
         return self._circuit_breaker.call(self._fetch_weather, city.strip(), units)
 
-    def _fetch_weather(self, city: str, units: str) -> Dict[str, Any]:
+    def _fetch_weather(self, city: str, units: str) -> dict[str, Any]:
         try:
-            logger.info(f"Fetching weather for city: {city}")
+            # FIXED G004: Swapped out f-string for percentage-style lazy logging format
+            logger.info("Fetching weather for city: %s", city)
             response = requests.get(
                 f"{self.base_url}/weather",
                 params={"q": city, "units": units},
@@ -109,12 +114,13 @@ class WeatherClient:
             }
         except (CityNotFoundError, WeatherAPIError):
             raise 
-        except requests.Timeout:
-            raise WeatherAPIError(f"Weather API request for '{city}' timed out")
+        except requests.Timeout as e:
+            # FIXED B904: Added explicit exception chaining via 'from e'
+            raise WeatherAPIError(f"Weather API request for '{city}' timed out") from e
         except requests.RequestException as e:
-            raise WeatherAPIError(f"Error fetching weather data: {e}")
+            raise WeatherAPIError(f"Error fetching weather data: {e}") from e
         except (KeyError, ValueError) as e:
-            raise WeatherAPIError(f"Error parsing weather API response: {e}")
+            raise WeatherAPIError(f"Error parsing weather API response: {e}") from e
 
 
 # --- 3. The LangChain Framework Agent Tool Wrapper ---

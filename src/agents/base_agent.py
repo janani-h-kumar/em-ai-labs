@@ -12,7 +12,7 @@ Design contract:
 import logging
 from abc import ABC, abstractmethod
 from datetime import datetime
-from typing import Any, Dict, Optional
+from typing import Any
 
 from src.utils.config_loader import ConfigManager
 
@@ -96,10 +96,11 @@ class BaseAgent(ABC):
             # Already a typed error — let it propagate as-is
             raise
         except Exception as e:
-            self.logger.error(
-                "Failed to initialise agent name=%s error=%s",
-                self.__class__.__name__, e,
-                exc_info=True,
+            # FIXED G201: Swapped to .exception and removed redundant error=%s + exc_info=True
+            self.logger.exception(
+                "Failed to initialise agent name=%s: %s",
+                self.__class__.__name__,
+                e,
             )
             raise AgentInitError(
                 f"Failed to initialise {self.__class__.__name__}: {e}"
@@ -160,7 +161,7 @@ class BaseAgent(ABC):
         """Return True if initialize() completed without error."""
         return self._initialized
 
-    def get_config(self, key: str, default: Optional[Any] = None) -> Optional[Any]:
+    def get_config(self, key: str, default: Any | None = None) -> Any | None:
         """
         Convenience wrapper for config access with dot notation.
 
@@ -176,7 +177,7 @@ class BaseAgent(ABC):
         """
         return self.config_manager.get(key, default)
 
-    def health_check(self) -> Dict[str, Any]:
+    def health_check(self) -> dict[str, Any]:
         """
         Return a health status dict for monitoring and smoke-testing.
 

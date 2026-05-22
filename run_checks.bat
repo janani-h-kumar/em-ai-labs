@@ -46,7 +46,7 @@ if %ERRORLEVEL% EQU 0 (
 :: Phase 1: Linting and Code Style Checks
 echo [1/2] Executing Ruff Linter...
 echo -------------------------------------------------------
-!RUFF_CMD! check .
+!RUFF_CMD! check . --fix
 if %ERRORLEVEL% NEQ 0 (
     echo.
     echo [FAIL] Code quality checks failed. Please fix the lint errors above.

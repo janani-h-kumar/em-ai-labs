@@ -1,3 +1,3 @@
-from .config_loader import ConfigManager, ConfigError
+from .config_loader import ConfigError, ConfigManager
 
 __all__ = ["ConfigManager", "ConfigError"]

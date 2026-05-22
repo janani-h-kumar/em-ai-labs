@@ -6,11 +6,12 @@ complementing the weather tool for comprehensive information retrieval.
 """
 
 import logging
-import requests
-from typing import List, Dict
 from dataclasses import dataclass
-from src.middleware.retry import retry_with_backoff
+
+import requests
 from pydantic import BaseModel, Field
+
+from src.middleware.retry import retry_with_backoff
 from src.tools.base_tool import BaseTool
 from src.utils.config_loader import ConfigManager
 
@@ -22,7 +23,7 @@ class WebSearchInput(BaseModel):
         description="The web search query string, e.g., 'latest space exploration news'"
     )
 
-# Custom Exceptions
+# Custom Exceptions (Compliant with N818)
 class WebSearchError(Exception):
     """Base exception for web search errors."""
     pass
@@ -61,9 +62,9 @@ class WebSearchClient:
         self,
         query: str,
         num_results: int = 5
-    ) -> List[SearchResult]:
+    ) -> list[SearchResult]:
         if not query or not isinstance(query, str) or not query.strip():
-            raise ValueError("Query must be a non-empty string")
+            raise ValueError("Query must be a non-empty string") 
         
         # Clamp num_results to valid range
         num_results = min(max(num_results, 1), 10)
@@ -77,7 +78,8 @@ class WebSearchClient:
                 "t": "em-ai-labs"  # User agent
             }
             
-            logger.debug(f"Searching: {query}")
+            # FIXED G004: Swapped out f-string for standard log parameterization
+            logger.debug("Searching: %s", query)
             response = requests.get(
                 self.base_url,
                 params=params,
@@ -97,24 +99,25 @@ class WebSearchClient:
                 if result.title and result.url:
                     results.append(result)
             
-            logger.info(f"Search found {len(results)} results for: {query}")
+            # FIXED G004: Swapped out f-string for standard log parameterization
+            logger.info("Search found %d results for: %s", len(results), query)
             return results
         
         except requests.RequestException as e:
-            error_msg = f"Web search API request failed: {e}"
-            logger.error(error_msg)
-            raise WebSearchExecutionError(error_msg)
+            # FIXED G201 / G004: Used logger.exception to cleanly log tracebacks natively
+            logger.exception("Web search API request failed")
+            raise WebSearchExecutionError("Web search API request failed") from e
         
         except Exception as e:
-            error_msg = f"Unexpected error during web search: {e}"
-            logger.error(error_msg)
-            raise WebSearchExecutionError(error_msg)
+            # FIXED G201 / G004: Used logger.exception to cleanly log tracebacks natively
+            logger.exception("Unexpected error during web search")
+            raise WebSearchExecutionError("Unexpected error during web search") from e
     
     def search_as_dict(
         self,
         query: str,
         num_results: int = 5
-    ) -> Dict[str, List[Dict[str, str]]]:
+    ) -> dict[str, list[dict[str, str]]]:
         results = self.search(query, num_results)
         return {
             "results": [

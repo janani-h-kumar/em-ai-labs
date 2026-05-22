@@ -13,10 +13,11 @@ Changes from original:
 """
 
 import logging
+
 import requests
-from typing import Optional, Union, List, Dict
-from src.providers.base_provider import BaseLLMProvider
 from openai import OpenAI
+
+from src.providers.base_provider import BaseLLMProvider
 
 # FIX: Removed logging.basicConfig(level=logging.INFO) — it overrides
 # the StructuredFormatter set up in logging_utils.py and breaks JSON log
@@ -95,13 +96,13 @@ class OllamaClient(BaseLLMProvider):
             api_key=self.api_key,
             timeout=60.0,  # seconds; adjust per your model's expected latency
         )
-        logger.info(f"OllamaClient initialized with model: {self.model}")
+        logger.info("OllamaClient initialized with model: %s", self.model)
 
     # -----------------------------------------------------------------------
     # Private helpers
     # -----------------------------------------------------------------------
 
-    def _build_base_url(self, host: Optional[str]) -> Optional[str]:
+    def _build_base_url(self, host: str | None) -> str | None:
         if not host:
             return None
         host = host.rstrip('/')
@@ -116,18 +117,18 @@ class OllamaClient(BaseLLMProvider):
             )
             if response.status_code != 200:
                 raise OllamaConnectionError(
-                    f"Ollama server returned status {response.status_code}"
+                    "Ollama server returned status %d", response.status_code
                 )
             logger.info("Successfully connected to Ollama server")
-        except requests.ConnectionError:
+        except requests.ConnectionError as e:
             raise OllamaConnectionError(
                 f"Cannot connect to Ollama at {self.base_url}. "
                 "Is Ollama running? Try: ollama serve"
-            )
-        except requests.Timeout:
+            ) from e
+        except requests.Timeout as e:
             raise OllamaConnectionError(
                 f"Ollama server at {self.base_url} did not respond within 5s."
-            )
+            ) from e
 
     def _validate_model_exists(self) -> None:
         """Check the configured model is available; auto-select if unset."""
@@ -139,7 +140,7 @@ class OllamaClient(BaseLLMProvider):
                         "No model specified and no models found on the server. "
                         "Run: ollama pull <model-name>"
                     )
-                logger.info(f"Auto-selected model: {self.model}")
+                logger.info("Auto-selected model: %s", self.model)
                 return
 
             response = requests.get(
@@ -165,12 +166,12 @@ class OllamaClient(BaseLLMProvider):
                     f"Run: ollama pull {self.model}"
                 )
 
-            logger.info(f"Model '{self.model}' confirmed available")
+            logger.info("Model '%s' confirmed available", self.model)
 
         except requests.RequestException as e:
-            raise OllamaConnectionError(f"Error checking model availability: {e}")
+            raise OllamaConnectionError(f"Error checking model availability: {e}") from e
 
-    def _auto_select_model(self) -> Optional[str]:
+    def _auto_select_model(self) -> str | None:
         """Return the first running model, or first available model."""
         try:
             for endpoint in ("/api/ps", "/api/tags"):
@@ -190,7 +191,7 @@ class OllamaClient(BaseLLMProvider):
     # Public API
     # -----------------------------------------------------------------------
 
-    def chat_completion(self, content: Union[str, Dict, List[Dict]]) -> str:
+    def chat_completion(self, content: str | dict | list[dict]) -> str:
         """
         Send a message to the model and return its response.
 
@@ -217,7 +218,7 @@ class OllamaClient(BaseLLMProvider):
                     "Expected str, dict, or list."
                 )
 
-            logger.info(f"Sending {len(messages)} message(s) to model: {self.model}")
+            logger.info("Sending %s message(s) to model: %s", len(messages), self.model)
             response = self.client.chat.completions.create(
                 model=self.model,
                 messages=messages,
@@ -229,7 +230,7 @@ class OllamaClient(BaseLLMProvider):
         except OllamaError:
             raise
         except Exception as e:
-            raise OllamaError(f"Error calling model '{self.model}': {e}")
+            raise OllamaError(f"Error calling model '{self.model}': {e}") from e
 
     def health_check(self) -> dict:
         """Checks if the local Ollama instance is reachable."""

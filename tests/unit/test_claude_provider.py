@@ -1,6 +1,8 @@
 import os
-import pytest
 from unittest.mock import MagicMock
+
+import pytest
+
 from src.providers.claude_provider import ClaudeProvider  # Adjust import path if needed
 
 # Define the skip condition based on the environment variable

@@ -1,9 +1,9 @@
-import pytest
 from unittest.mock import Mock
+
+import pytest
 
 from src.agents.weather_agent import WeatherAgent, WeatherAgentExecutionError
 from src.tools.weather_tool import CityNotFoundError
-
 
 # ------------------------------------------------------------------
 # FIXTURE (clean DI - NO __new__)

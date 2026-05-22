@@ -5,10 +5,11 @@ This module implements the circuit breaker pattern to prevent hammering
 services that are experiencing issues, enabling graceful degradation.
 """
 
-import time
 import logging
+import time
+from collections.abc import Callable
 from enum import Enum
-from typing import Callable, Any, Dict
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -20,7 +21,7 @@ class CircuitState(Enum):
     HALF_OPEN = "half_open"    # Testing if service recovered
 
 
-class CircuitBreakerOpen(Exception):
+class CircuitBreakerOpenError(Exception):
     """Raised when circuit breaker is OPEN."""
     pass
 
@@ -85,7 +86,7 @@ class CircuitBreaker:
             Result from func
             
         Raises:
-            CircuitBreakerOpen: If circuit is OPEN
+            CircuitBreakerOpenError: If circuit is OPEN
             Exception: Any exception from func
         """
         if self.state == CircuitState.OPEN:
@@ -94,10 +95,10 @@ class CircuitBreaker:
                 self.state = CircuitState.HALF_OPEN
                 self.success_count_in_half_open = 0
                 logger.info(
-                    f"[{self.service_name}] Circuit HALF_OPEN, testing recovery"
+                    "[%s] Circuit HALF_OPEN, testing recovery", self.service_name
                 )
             else:
-                raise CircuitBreakerOpen(
+                raise CircuitBreakerOpenError(
                     f"Circuit breaker OPEN for {self.service_name}. "
                     f"Service unavailable, retrying in "
                     f"{int(self.recovery_timeout - (time.time() - self.last_failure_time))}s."
@@ -119,7 +120,7 @@ class CircuitBreaker:
                 self.state = CircuitState.CLOSED
                 self.failure_count = 0
                 logger.info(
-                    f"[{self.service_name}] Circuit CLOSED, service recovered"
+                    "[%s] Circuit CLOSED, service recovered", self.service_name
                 )
         elif self.state == CircuitState.CLOSED:
             self.failure_count = 0
@@ -132,15 +133,15 @@ class CircuitBreaker:
         if self.state == CircuitState.HALF_OPEN:
             self.state = CircuitState.OPEN
             logger.error(
-                f"[{self.service_name}] Circuit OPEN again, recovery failed"
+                "[%s] Circuit OPEN again, recovery failed", self.service_name
             )
         elif self.failure_count >= self.failure_threshold:
             self.state = CircuitState.OPEN
             logger.error(
-                f"[{self.service_name}] Circuit OPEN after {self.failure_count} failures"
+                "[%s] Circuit OPEN after %d failures", self.service_name, self.failure_count
             )
     
-    def get_state(self) -> Dict[str, Any]:
+    def get_state(self) -> dict[str, Any]:
         """Return circuit state for monitoring."""
         return {
             "service": self.service_name,

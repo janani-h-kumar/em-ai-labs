@@ -1,6 +1,7 @@
 from src.providers.base_provider import BaseLLMProvider
-from src.providers.ollama_provider import OllamaClient
 from src.providers.claude_provider import ClaudeProvider
+from src.providers.ollama_provider import OllamaClient
+
 
 def get_provider(config_manager) -> BaseLLMProvider:
     """

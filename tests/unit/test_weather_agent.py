@@ -2,9 +2,16 @@
 Enterprise Pytest test suite for WeatherAgent.
 """
 
+import time
+from unittest.mock import Mock
+
 import pytest
-from unittest.mock import Mock, patch
+
 from src.agents.weather_agent import WeatherAgent, WeatherAgentExecutionError
+from src.middleware.circuit_breaker import CircuitBreaker, CircuitBreakerOpen, CircuitState
+from src.middleware.retry import retry_with_backoff
+from src.tools.weather_tool import CityNotFoundError
+from src.utils.config_loader import ConfigValidationError
 
 
 class TestWeatherAgentInitialization:
@@ -20,11 +27,11 @@ class TestWeatherAgentInitialization:
             base_llm_provider=mock_llm,
             weather_client=mock_weather
         )
-        
+
         # Inject the test config context manager directly
         agent.config_manager = config_for_testing
         agent.initialize()
-        
+
         assert agent.config_manager.get("runtime.orchestration") == "langchain"
 
 
@@ -83,8 +90,6 @@ class TestWeatherSummary:
 
     def test_city_not_found_raises_execution_error(self, config_for_testing):
         """CityNotFoundError from weather client should become WeatherAgentExecutionError."""
-        from src.tools.weather_tool import CityNotFoundError
-
         mock_wc = Mock()
         mock_wc.get_temperature.side_effect = CityNotFoundError("Fake City not found")
 
@@ -96,7 +101,7 @@ class TestWeatherSummary:
 
     def test_empty_city_raises_value_error(self):
         agent = WeatherAgent(base_llm_provider=Mock(), weather_client=Mock())
-        
+
         with pytest.raises(ValueError, match="non-empty"):
             agent.get_weather_summary("")
 
@@ -114,7 +119,6 @@ class TestConfigManager:
         assert config_for_testing.get("nonexistent.key", default="fallback") == "fallback"
 
     def test_get_required_raises_on_missing(self, config_for_testing):
-        from src.utils.config_loader import ConfigValidationError
         with pytest.raises(ConfigValidationError):
             config_for_testing.get_required("env.DOES_NOT_EXIST")
 
@@ -126,7 +130,6 @@ class TestConfigManager:
         config_for_testing.validate_startup()
 
     def test_validate_startup_raises_on_missing_key(self, config_for_testing):
-        from src.utils.config_loader import ConfigValidationError
         config_for_testing._config["env"].pop("OPENWEATHER_API_KEY", None)
         with pytest.raises(ConfigValidationError):
             config_for_testing.validate_startup()
@@ -139,7 +142,6 @@ class TestConfigManager:
 class TestCircuitBreaker:
 
     def setup_method(self):
-        from src.middleware.circuit_breaker import CircuitBreaker
         self.cb = CircuitBreaker(
             failure_threshold=3,
             recovery_timeout=60,
@@ -151,8 +153,6 @@ class TestCircuitBreaker:
         assert result == "ok"
 
     def test_circuit_opens_after_threshold_failures(self):
-        from src.middleware.circuit_breaker import CircuitState
-
         def always_fails():
             raise ConnectionError("boom")
 
@@ -165,17 +165,13 @@ class TestCircuitBreaker:
         assert self.cb.state == CircuitState.OPEN
 
     def test_open_circuit_raises_circuit_breaker_open(self):
-        from src.middleware.circuit_breaker import CircuitBreakerOpen, CircuitState
         self.cb.state = CircuitState.OPEN
-        self.cb.last_failure_time = __import__('time').time()
+        self.cb.last_failure_time = time.time()
 
         with pytest.raises(CircuitBreakerOpen):
             self.cb.call(lambda: "should not run")
 
     def test_circuit_resets_after_successful_half_open(self):
-        from src.middleware.circuit_breaker import CircuitState
-        import time
-
         self.cb.state = CircuitState.OPEN
         self.cb.last_failure_time = time.time() - 9999
 
@@ -192,8 +188,6 @@ class TestCircuitBreaker:
 class TestRetryWithBackoff:
 
     def test_succeeds_on_first_attempt(self):
-        from src.middleware.retry import retry_with_backoff
-
         call_count = 0
 
         @retry_with_backoff(max_retries=3)
@@ -207,8 +201,6 @@ class TestRetryWithBackoff:
         assert call_count == 1
 
     def test_retries_on_transient_error(self):
-        from src.middleware.retry import retry_with_backoff
-
         call_count = 0
 
         @retry_with_backoff(
@@ -228,8 +220,6 @@ class TestRetryWithBackoff:
         assert call_count == 3
 
     def test_does_not_retry_permanent_error(self):
-        from src.middleware.retry import retry_with_backoff
-
         call_count = 0
 
         @retry_with_backoff(
@@ -247,8 +237,6 @@ class TestRetryWithBackoff:
         assert call_count == 1
 
     def test_raises_after_exhausting_retries(self):
-        from src.middleware.retry import retry_with_backoff
-
         @retry_with_backoff(
             max_retries=2,
             base_delay=0.01,

@@ -1,7 +1,7 @@
 import logging
 import re
 from pathlib import Path
-from typing import Optional, Dict, Any
+from typing import Any
 
 from agents.base_agent import BaseAgent
 from providers.base_provider import BaseLLMProvider
@@ -28,10 +28,10 @@ class WeatherAgent(BaseAgent):
 
     def __init__(
         self,
-        config_path: Optional[str] = None,
-        system_prompt: Optional[str] = None,
-        base_llm_provider: Optional[BaseLLMProvider] = None,
-        weather_client: Optional[BaseTool] = None,
+        config_path: str | None = None,
+        system_prompt: str | None = None,
+        base_llm_provider: BaseLLMProvider | None = None,
+        weather_client: BaseTool | None = None,
     ):
         # Resolve config path cleanly
         if config_path is None:
@@ -108,15 +108,15 @@ class WeatherAgent(BaseAgent):
             error_class = e.__class__.__name__
             # Handle domain-specific edge errors transparently
             if error_class in ("CityNotFoundError", "WeatherAPIError", "OllamaError"):
-                raise WeatherAgentExecutionError(f"City not found: {e}")
-            raise WeatherAgentExecutionError(str(e))
+                raise WeatherAgentExecutionError("City not found: {e}") from e
+            raise WeatherAgentExecutionError("An error occurred: {e}") from e
 
-    def get_detailed_weather(self, city: str, temperature_units: str = "imperial") -> Dict[str, Any]:
+    def get_detailed_weather(self, city: str, temperature_units: str = "imperial") -> dict[str, Any]:
         if not city or not city.strip():
             raise ValueError("City must be non-empty")
         return self.weather_client.get_temperature(city.strip())
 
-    def health_check(self) -> Dict[str, Any]:
+    def health_check(self) -> dict[str, Any]:
         import datetime
         return {
             "agent": "WeatherAgent",

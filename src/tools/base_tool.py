@@ -1,8 +1,11 @@
 from abc import ABC, abstractmethod
-from typing import Type, Any
-from pydantic import BaseModel
+from typing import Any
+
 from langchain_core.tools import Tool
+from pydantic import BaseModel
+
 from src.utils.config_loader import ConfigManager
+
 
 class BaseTool(ABC):
     """
@@ -11,7 +14,7 @@ class BaseTool(ABC):
     """
     name: str
     description: str
-    args_schema: Type[BaseModel]
+    args_schema: type[BaseModel]
 
     def __init__(self, config_manager: ConfigManager):
         self.config_manager = config_manager
@@ -46,5 +49,7 @@ class BaseTool(ABC):
         except Exception as e:
             import logging
             logger = logging.getLogger(__name__)
-            logger.error(f"Execution error in tool '{self.name}': {str(e)}", exc_info=True)
+            
+            # FIXED G201 / G004: Used logger.exception with lazy formatting to handle traceback and variables
+            logger.exception("Execution error in tool '%s'", self.name)
             return f"Error executing tool '{self.name}': {str(e)}"

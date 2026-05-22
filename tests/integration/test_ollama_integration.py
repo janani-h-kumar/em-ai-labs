@@ -1,8 +1,10 @@
 import pytest
 
-# FIX: Import ConfigManager from its real home module, not the ollama provider
-from src.utils.config_loader import ConfigManager 
 from src.providers.ollama_provider import OllamaClient
+
+# FIX: Import ConfigManager from its real home module, not the ollama provider
+from src.utils.config_loader import ConfigManager
+
 
 @pytest.mark.integration
 class TestOllamaIntegration:

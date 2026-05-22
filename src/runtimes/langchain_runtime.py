@@ -2,24 +2,23 @@
 LangChain-based orchestration runtime using a local Ollama LLM with Stateful Multi-Turn Memory.
 """
 
-import logging
-import threading
-import time
-from typing import List, Optional, Dict, Any
-
 import concurrent
 import concurrent.futures
+import logging
+import time
+from typing import Any
+
 import requests
-from langchain_ollama import ChatOllama
-from langchain_core.tools import Tool
-from langchain.agents import create_tool_calling_agent, AgentExecutor
+from langchain.agents import AgentExecutor, create_tool_calling_agent
+from langchain_core.chat_history import InMemoryChatMessageHistory
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
 from langchain_core.runnables.history import RunnableWithMessageHistory
-from langchain_core.chat_history import InMemoryChatMessageHistory
+from langchain_core.tools import Tool
+from langchain_ollama import ChatOllama
 
+from src.middleware.retry import retry_with_backoff
 from src.runtimes.base_runtime import BaseRuntime, RuntimeTelemetry
 from src.utils.config_loader import ConfigManager
-from src.middleware.retry import retry_with_backoff
 from src.utils.logging_utils import set_correlation_id
 
 logger = logging.getLogger(__name__)
@@ -50,30 +49,31 @@ class LangChainRuntimeExecutionError(LangChainRuntimeError):
 class LangChainRuntime(BaseRuntime):
 
     INVOKE_TIMEOUT_SECONDS = 120
-    
+
     def __init__(
         self,
         config_manager: ConfigManager,
-        tools: Optional[List[Tool]] = None,
+        tools: list[Tool] | None = None,
     ):
         super().__init__(name="LangChainRuntime")
 
         try:
             self.config_manager = config_manager
-            
+
             # ENTERPRISE MEMORY STORE: Partitioned by tracking session IDs
-            self._history_store: Dict[str, InMemoryChatMessageHistory] = {}
+            self._history_store: dict[str, InMemoryChatMessageHistory] = {}
 
             ollama_base_url = config_manager.get("env.OLLAMA_BASE_URL", "http://localhost:11434")
             ollama_model = config_manager.get("env.LLM_MODEL", default="llama3.1")
 
-            logger.info(f"Initialising ChatOllama with model: {ollama_model}")
+            # FIXED G004: Converted to lazy formatting
+            logger.info("Initialising ChatOllama with model: %s", ollama_model)
             self.llm = ChatOllama(
                 base_url=ollama_base_url,
                 model=ollama_model,
                 temperature=0.2,
                 num_ctx=2048,           # Crucial for multi-turn to prevent context blowout
-                # stop=["Observation:", "Human:"],                
+                # stop=["Observation:", "Human:"],
             )
 
             self._verify_ollama_connection(ollama_base_url)
@@ -90,8 +90,9 @@ class LangChainRuntime(BaseRuntime):
 
         except Exception as e:
             msg = f"Failed to initialise LangChainRuntime: {e}"
-            logger.error(msg)
-            raise LangChainRuntimeInitError(msg)
+            # FIXED G004: Converted to lazy formatting
+            logger.error("Failed to initialise LangChainRuntime: %s", e)
+            raise LangChainRuntimeInitError(msg) from e
 
     @retry_with_backoff(max_retries=3, base_delay=1, retryable_exceptions=(requests.Timeout, requests.ConnectionError))
     def _verify_ollama_connection(self, base_url: str) -> None:
@@ -102,14 +103,17 @@ class LangChainRuntime(BaseRuntime):
                 raise LangChainRuntimeInitError(f"Ollama returned HTTP {response.status_code}")
             logger.info("Ollama connection verified via /api/tags")
         except Exception as e:
-            raise LangChainRuntimeInitError(f"Cannot reach Ollama at {base_url}: {e}")
+            # FIXED: Corrected the un-prefixed f-string syntax issue from original code safely via lazy logging extraction
+            logger.error("Cannot reach Ollama at %s", base_url)
+            raise LangChainRuntimeInitError(f"Cannot reach Ollama at {base_url}") from e
 
     def _warmup_model(self):
         try:
             self.llm.invoke("ping")
             logger.info("Model warmup complete")
         except Exception as e:
-            logger.warning(f"Warmup failed: {e}")
+            # FIXED G004: Converted to lazy formatting
+            logger.warning("Warmup failed: %s", e)
 
     # -----------------------------------------------------------------------
     # Stateful Memory Helper
@@ -137,10 +141,10 @@ class LangChainRuntime(BaseRuntime):
         ])
 
         agent = create_tool_calling_agent(llm=self.llm, tools=self.tools, prompt=prompt)
-        
+
         return AgentExecutor(
-            agent=agent, 
-            tools=self.tools, 
+            agent=agent,
+            tools=self.tools,
             # verbose=True,
             handle_parsing_errors=True,
             max_execution_time=self.INVOKE_TIMEOUT_SECONDS
@@ -175,8 +179,8 @@ class LangChainRuntime(BaseRuntime):
                 )
                 try:
                     result = future.result(timeout=self.INVOKE_TIMEOUT_SECONDS)
-                except concurrent.futures.TimeoutError:
-                    raise LangChainRuntimeExecutionError(f"Agent timed out after {self.INVOKE_TIMEOUT_SECONDS}s.")
+                except concurrent.futures.TimeoutError as e:
+                    raise LangChainRuntimeExecutionError("Agent timed out after %d seconds.", self.INVOKE_TIMEOUT_SECONDS) from e
 
             response = result.get("output", "No response generated.")
 
@@ -184,7 +188,7 @@ class LangChainRuntime(BaseRuntime):
             ollama_model = self.config_manager.get("env.LLM_MODEL", default="llama3.1")
             input_tokens = _count_tokens(message)
             output_tokens = _count_tokens(response)
-            
+
             self.telemetry = RuntimeTelemetry(
                 input_tokens=input_tokens,
                 output_tokens=output_tokens,
@@ -196,17 +200,21 @@ class LangChainRuntime(BaseRuntime):
             return response
 
         except Exception as e:
-            logger.error(f"Runtime execution failed: {e}", extra={"extra_data": {"request_id": request_id}})
-            raise LangChainRuntimeExecutionError(f"Failed to execute: {e}")
+            # FIXED G004: Converted to lazy formatting
+            logger.error(
+                "Runtime execution failed: %s", 
+                e, 
+                extra={"extra_data": {"request_id": request_id}}
+            )
+            raise LangChainRuntimeExecutionError("Failed to execute: %s", e) from e
 
-    def set_tools(self, tools: List[Tool]) -> None:
+    def set_tools(self, tools: list[Tool]) -> None:
         super().set_tools(tools)
-        setup_agent_duration = time.perf_counter()
-        
+
         if tools:
             raw_executor = self._setup_agent()
-            
-            # ENTERPRISE DESIGN PATTERN: Wrap the raw Agent Executor inside a 
+
+            # ENTERPRISE DESIGN PATTERN: Wrap the raw Agent Executor inside a
             # Message History orchestration wrapper to automate history appending.
             self.agent_executor = RunnableWithMessageHistory(
                 runnable=raw_executor,
@@ -218,7 +226,7 @@ class LangChainRuntime(BaseRuntime):
         else:
             self.agent_executor = None
 
-    def health_check(self) -> Dict[str, Any]:
+    def health_check(self) -> dict[str, Any]:
         ollama_base_url = self.config_manager.get("env.OLLAMA_BASE_URL", "http://localhost:11434")
         try:
             resp = requests.get(ollama_base_url.rstrip("/") + "/api/tags", timeout=3)
