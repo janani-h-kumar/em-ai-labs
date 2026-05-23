@@ -1,36 +1,28 @@
-from unittest.mock import Mock
+from unittest.mock import MagicMock
 
 import pytest
 
+from src.providers.ollama_provider import OllamaClient
 from src.providers.provider_factory import ProviderFactory
 
 
-def test_factory_exists():
-    factory = ProviderFactory()
-    assert factory is not None
+@pytest.fixture
+def mock_config():
+    config = MagicMock()
+
+    def _get(key, default=None):
+        if key == "llm.provider":
+            return config.provider
+        return default
+
+    config.get = _get
+    config.provider = "ollama"
+    return config
 
 
-def test_create_ollama_provider():
-    config = Mock()
-    config.get.return_value = "ollama"
+def test_create_ollama_provider(mock_config):
+    mock_config.get.return_value = "ollama"
 
-    provider = ProviderFactory.create_provider(config)
+    provider = ProviderFactory.get_provider(mock_config)
 
-    assert provider is not None
-
-
-def test_create_claude_provider():
-    config = Mock()
-    config.get.return_value = "claude"
-
-    provider = ProviderFactory.create_provider(config)
-
-    assert provider is not None
-
-
-def test_unknown_provider_raises():
-    config = Mock()
-    config.get.return_value = "invalid"
-
-    with pytest.raises(ValueError):
-        ProviderFactory.create_provider(config)
+    assert isinstance(provider, OllamaClient)

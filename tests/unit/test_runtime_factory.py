@@ -1,17 +1,12 @@
-from unittest.mock import Mock
-
+from src.runtimes.langchain_runtime import LangChainRuntime
 from src.runtimes.runtime_factory import RuntimeFactory
 
 
-def test_runtime_factory_exists():
-    factory = RuntimeFactory()
-    assert factory is not None
+def test_create_langchain_runtime(mock_config):
+    runtime = RuntimeFactory.create(
+        runtime_type="langchain",
+        config_manager=mock_config,
+        tools=[],
+    )
 
-
-def test_create_langchain_runtime():
-    config = Mock()
-    config.get.return_value = "langchain"
-
-    runtime = RuntimeFactory.create_runtime(config)
-
-    assert runtime is not None
+    assert isinstance(runtime, LangChainRuntime)
