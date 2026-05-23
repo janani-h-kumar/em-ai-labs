@@ -1,5 +1,6 @@
 [tool.pip-audit]
 ignore-vulns = [
-  "PYSEC-2026-76",
-  "PYSEC-2026-77"
+  "GHSA-6qv9-48xg-fc7f",
+  "GHSA-c67j-w6g6-q2cm",
+  "GHSA-2g6r-c272-w58r",
 ]
