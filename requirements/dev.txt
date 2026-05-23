@@ -8,7 +8,7 @@
 # =========================
 # Testing Framework
 # =========================
-pytest==8.3.5
+pytest==9.0.3
 # Core test runner for Python
 pytest-mock==3.14.0
 # Mocking utilities for unit tests
@@ -31,7 +31,7 @@ pip-audit==2.9.0
 # =========================
 # Code Quality / Formatting
 # =========================
-black==26.3.1
+black==26.5.1
 # Opinionated Python formatter (ensures consistent style)
 ruff==0.12.7
 # Extremely fast linter + import sorter (replaces flake8/isort)
