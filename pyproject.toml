@@ -10,9 +10,9 @@ authors = [{name = "Janani Harihara Kumar"}]
 requires-python = ">=3.11"
 dependencies = [
     # Core infra
-    "requests==2.32.4",
+    "requests==2.33.0",
     "pyyaml==6.0.2",
-    "python-dotenv==1.1.1",
+    "python-dotenv==1.2.2",
 
     # LLM providers
     "openai==1.99.9",
