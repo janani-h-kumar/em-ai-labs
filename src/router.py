@@ -224,3 +224,7 @@ def get_router() -> MessageRouter:
     Return global router instance.
     """
     return _router
+
+
+class Router(MessageRouter):
+    pass

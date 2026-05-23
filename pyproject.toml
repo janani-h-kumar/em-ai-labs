@@ -57,7 +57,8 @@ python_classes = ["Test*"]
 python_functions = ["test_*"]
 addopts = "--tb=short --cov=src --cov-report=term-missing --cov-fail-under=10"
 pythonpath = ["."]
-asyncio_mode = "auto"  # ADDED: Automatically handles async def test_* functions
+asyncio_mode = "auto" # ADDED: Automatically handles async def test_* functions
+asyncio_default_fixture_loop_scope = "function"
 markers = [
     "integration: Integration tests requiring external services (Ollama, APIs)",
 ]
