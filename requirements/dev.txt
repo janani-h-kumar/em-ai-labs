@@ -8,7 +8,7 @@
 # =========================
 # Testing Framework
 # =========================
-pytest==8.3.2
+pytest==8.3.5
 # Core test runner for Python
 pytest-mock==3.14.0
 # Mocking utilities for unit tests
@@ -19,11 +19,21 @@ pytest-asyncio==0.24.0
 # tools, and OpenTelemetry async hooks.
 
 # =========================
+# Testing / Quality / Security
+# =========================
+
+bandit==1.8.6
+# Static security scanning
+
+pip-audit==2.9.0
+# Dependency vulnerability scanning
+
+# =========================
 # Code Quality / Formatting
 # =========================
-black==24.8.0
+black==26.3.1
 # Opinionated Python formatter (ensures consistent style)
-ruff==0.15.14
+ruff==0.12.7
 # Extremely fast linter + import sorter (replaces flake8/isort)
 mypy==1.11.2
 # Static type checker for Python
@@ -35,5 +45,5 @@ ipython==8.27.0
 # Better interactive REPL for debugging agents and tools
 rich==13.8.1
 # Pretty console output (great for debugging LangChain/tool traces)
-pre-commit==3.8.0
+pre-commit==4.2.0
 # Git hooks for enforcing lint + format before commits

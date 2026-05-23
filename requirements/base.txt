@@ -1,6 +1,6 @@
 # =========================================================
 # Enterprise AI Lab - Production Requirements (Python 3.11)
-# Stable LangChain + Ollama + Tool Agent Stack
+# Stable LangChain 0.3.x + Ollama + Tool Agent Stack
 # =========================================================
 
 # =========================
@@ -8,55 +8,87 @@
 # =========================
 requests==2.34.2
 # HTTP client for external APIs (weather, web_search, etc.)
-# Stable, production-safe, widely used
+
+httpx==0.28.1
+# Modern async/sync HTTP transport used internally by LangChain/OpenAI
+
 PyYAML==6.0.2
 # YAML config loader (config.yaml support)
+
 python-dotenv==1.2.2
 # Loads environment variables from .env files
 
-# =========================
-# LLM SDKs (Optional / Future Flexibility)
-# =========================
-openai==1.82.0
-# OpenAI SDK (optional if you ever switch models or compare outputs)
-anthropic>=0.25.0
-# Anthropic Claude SDK (optional multi-model support)
 
 # =========================
-# LangChain Stable Stack (Enterprise Pinning)
+# LLM SDKs
 # =========================
-langchain==0.2.14
-# Core LangChain framework
-# Provides AgentExecutor, initialize_agent, tools, prompts
-# STABLE version for production agent + tool workflows
-langchain-core==0.2.43
-# RESOLVED CONFLICT: Bumped from 0.2.35 to 0.2.43 to satisfy 
-# langchain-text-splitters requirement (requires >=0.2.38)
-langchain-community==0.2.12
-# Community tools + integrations
-# Includes standard tool implementations and connectors
-langchain-ollama==0.1.0
-# Ollama integration for local LLMs (ChatOllama wrapper)
-# Enables running models like qwen2.5 locally via Ollama
-langchain-text-splitters==0.2.4
-# Text chunking utilities (only needed if you add RAG later)
+openai==1.99.9
+# Stable OpenAI SDK compatible with langchain-openai 0.3.x
+
+anthropic==0.57.1
+# Stable Anthropic SDK
+
+tiktoken==0.9.0
+# Token counting for telemetry + OpenAI-compatible models
+
+
+# =========================
+# LangChain Stable Enterprise Stack
+# =========================
+langchain==0.3.27
+# Main LangChain framework
+
+langchain-core==0.3.85
+# Security-patched core runtime
+
+langchain-community==0.3.27
+# Community integrations/tools
+
+langchain-openai==0.3.28
+# OpenAI-compatible provider integration
+
+langchain-anthropic==0.3.17
+# Anthropic provider integration
+
+langchain-ollama==0.2.3
+# Stable Ollama integration compatible with LangChain 0.3.x
+
+langchain-text-splitters==0.3.9
+# Text splitting utilities
+
+langsmith==0.8.0
+# Tracing/observability + security-patched version
+
 
 # =========================
 # Observability / Logging
 # =========================
-structlog==22.1.0
-# Structured JSON logging for debugging + production tracing
-opentelemetry-api==1.34.1
-opentelemetry-sdk==1.34.1
-opentelemetry-instrumentation-asyncio==0.55b1
-# Distributed tracing + observability for latency debugging
+structlog==24.4.0
+# Structured logging
+
+opentelemetry-api==1.36.0
+opentelemetry-sdk==1.36.0
+opentelemetry-instrumentation-asyncio==0.57b0
+# Distributed tracing + observability
+
 
 # =========================
 # Performance / Utilities
 # =========================
-cachetools==5.3.3
-# In-memory caching (useful for tool response caching)
-tiktoken==0.7.0
-# Token counting for telemetry and LLM usage tracking
-duckduckgo-search==3.9.3
-# Free web search API (used by web_search tool implementation)
+cachetools==5.5.2
+# In-memory caching
+
+duckduckgo-search==8.1.1
+# Free web search integration
+
+tenacity==9.1.2
+# Retry/backoff utility used heavily in LLM infra
+
+
+# =========================
+# Validation / Models
+# =========================
+pydantic==2.11.7
+# Explicit pin for ecosystem stability
+
+

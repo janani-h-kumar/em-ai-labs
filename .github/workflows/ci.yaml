@@ -13,8 +13,7 @@ concurrency:
 
 jobs:
   # ──────────────────────────────────────────────
-  # JOB 1: Static analysis — runs in ~30 seconds
-  # No services, no secrets, just code quality
+  # JOB 1: Static analysis
   # ──────────────────────────────────────────────
   static-analysis:
     name: Static analysis
@@ -29,25 +28,24 @@ jobs:
           python-version: "3.11"
           cache: "pip"
 
+      - name: Upgrade pip
+        run: python -m pip install --upgrade pip
+
       - name: Install dev dependencies
         run: pip install -e ".[dev]"
 
-      - name: Ruff lint (style + errors)
+      - name: Ruff lint
         run: ruff check src/ tests/ --output-format=github
 
       - name: Ruff format check
         run: ruff format src/ tests/ --check
 
-      #- name: Mypy type check
-      #  run: mypy src/ --ignore-missing-imports --strict-optional
+      # Enable later after type coverage improves
+      # - name: Mypy type check
+      #   run: mypy src/ --ignore-missing-imports --strict-optional
 
-      - name: Run Ruff Formatter
-        run: |
-          ruff format src/ tests/
-          ruff format src/ tests/ --check
   # ──────────────────────────────────────────────
   # JOB 2: Security scan
-  # Bandit (code patterns) + pip-audit (CVEs)
   # ──────────────────────────────────────────────
   security:
     name: Security scan
@@ -62,24 +60,34 @@ jobs:
           python-version: "3.11"
           cache: "pip"
 
-      - name: Install security tools
-        run: pip install bandit pip-audit
+      - name: Upgrade pip
+        run: python -m pip install --upgrade pip
 
-      - name: Install project dependencies
-        run: pip install -e .
+      - name: Install project + dev dependencies
+        run: pip install -e ".[dev]"
 
       - name: Bandit — common Python security issues
-        # -ll = only medium and high severity
-        # -r  = recursive
-        # Skips: B101 (assert), B601 (paramiko shell) — common false positives
-        run: bandit -r src/ -ll --skip B101
+        run: |
+          bandit -r src/ \
+            -ll \
+            --skip B101
 
-      - name: pip-audit — known CVEs in dependencies
-        run: pip-audit --desc on
+      - name: pip-audit — dependency vulnerability scan
+        run: |
+          # Temporary ignores:
+          #
+          # GHSA-6w46-j5rx-g56g
+          # pytest ecosystem not yet compatible with pytest 9
+          #
+          # PYSEC-2026-76 / 77
+          # LangChain 1.x migration pending
+          pip-audit \
+            --ignore-vuln GHSA-6w46-j5rx-g56g \
+            --ignore-vuln PYSEC-2026-76 \
+            --ignore-vuln PYSEC-2026-77
 
   # ──────────────────────────────────────────────
-  # JOB 3: Unit tests — fast, no external services
-  # Must pass with zero API keys configured
+  # JOB 3: Unit tests
   # ──────────────────────────────────────────────
   unit-tests:
     name: Unit tests (Python ${{ matrix.python-version }})
@@ -87,6 +95,7 @@ jobs:
     needs: [static-analysis]
 
     strategy:
+      fail-fast: false
       matrix:
         python-version: ["3.11", "3.12"]
 
@@ -98,6 +107,9 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
           cache: "pip"
+
+      - name: Upgrade pip
+        run: python -m pip install --upgrade pip
 
       - name: Install dependencies
         run: pip install -e ".[dev]"
@@ -112,7 +124,6 @@ jobs:
             --cov-report=xml \
             --cov-fail-under=60
         env:
-          # Explicitly unset — unit tests must NOT need these
           OLLAMA_HOST: ""
           WEATHER_API_KEY: ""
           ANTHROPIC_API_KEY: ""
@@ -125,15 +136,13 @@ jobs:
           fail_ci_if_error: false
 
   # ──────────────────────────────────────────────
-  # JOB 4: Integration tests — optional
-  # Only runs when secrets are configured
-  # Skipped on forks and PRs from external contributors
+  # JOB 4: Integration tests
   # ──────────────────────────────────────────────
   integration-tests:
     name: Integration tests
     runs-on: ubuntu-latest
     needs: [unit-tests]
-    # Only run when the secret exists (owner's repo, not forks)
+
     if: ${{ github.repository_owner == 'janani-h-kumar' && github.event_name == 'push' }}
 
     steps:
@@ -145,15 +154,24 @@ jobs:
           python-version: "3.11"
           cache: "pip"
 
+      - name: Upgrade pip
+        run: python -m pip install --upgrade pip
+
       - name: Install dependencies
         run: pip install -e ".[dev]"
 
       - name: Install and start Ollama
         run: |
           curl -fsSL https://ollama.com/install.sh | sh
-          ollama serve &
-          sleep 5
+
+          nohup ollama serve > ollama.log 2>&1 &
+          sleep 10
+
           ollama pull phi3:mini
+
+      - name: Verify Ollama health
+        run: |
+          curl http://localhost:11434/api/tags
 
       - name: Run integration tests
         run: |
