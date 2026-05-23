@@ -1,4 +1,4 @@
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 from src.runtimes.langchain_runtime import LangChainRuntime
 from src.runtimes.runtime_factory import RuntimeFactory
@@ -18,8 +18,14 @@ def create_mock_config():
     return config
 
 
-def test_create_langchain_runtime():
+@patch("src.runtimes.langchain_runtime.requests.get")
+@patch("src.runtimes.langchain_runtime.ChatOllama")
+def test_create_langchain_runtime(mock_chat, mock_get):
+    mock_get.return_value.status_code = 200
+    mock_chat.return_value = MagicMock()
+
     mock_config = create_mock_config()
+
     runtime = RuntimeFactory.create(
         runtime_type="langchain",
         config_manager=mock_config,
