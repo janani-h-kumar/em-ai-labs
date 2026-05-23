@@ -15,8 +15,8 @@ from src.router import MessageRouter
 from src.runtimes.runtime_factory import RuntimeFactory
 from src.tools.weather_tool import WeatherClient, WeatherInput
 from src.tools.web_search_tool import WebSearchClient, WebSearchInput
-from utils.config_loader import ConfigManager
-from utils.logging_utils import set_correlation_id, setup_structured_logging
+from src.utils.config_loader import ConfigManager
+from src.utils.logging_utils import set_correlation_id, setup_structured_logging
 
 # Setup structured logging — must happen before any logger.getLogger() calls
 setup_structured_logging()
