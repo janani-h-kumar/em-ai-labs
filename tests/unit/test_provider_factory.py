@@ -1,4 +1,4 @@
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
 
@@ -10,19 +10,23 @@ from src.providers.provider_factory import ProviderFactory
 def mock_config():
     config = MagicMock()
 
-    def _get(key, default=None):
-        if key == "llm.provider":
-            return config.provider
-        return default
+    config_values = {
+        "llm.provider": "ollama",
+        "llm.model": "llama3",
+        "llm.base_url": "http://localhost:11434",
+    }
 
-    config.get = _get
-    config.provider = "ollama"
+    config.get.side_effect = lambda key, default=None: config_values.get(key, default)
+
     return config
 
 
-def test_create_ollama_provider(mock_config):
-    mock_config.get.return_value = "ollama"
+@patch("src.providers.provider_factory.OllamaClient")
+def test_create_ollama_provider(mock_ollama_client, mock_config):
+    mock_instance = MagicMock(spec=OllamaClient)
+    mock_ollama_client.return_value = mock_instance
 
     provider = ProviderFactory.get_provider(mock_config)
 
-    assert isinstance(provider, OllamaClient)
+    mock_ollama_client.assert_called_once()
+    assert provider == mock_instance
