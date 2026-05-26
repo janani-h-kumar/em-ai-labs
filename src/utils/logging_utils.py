@@ -17,7 +17,7 @@ from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from typing import Any
 
-Path("logs").mkdir(exist_ok=True)
+# Path("logs").mkdir(exist_ok=True)
 
 SERVICE_NAME = "em-ai-labs"
 HOSTNAME = socket.gethostname()
@@ -75,37 +75,32 @@ def get_correlation_id() -> str:
     return cid
 
 
-def setup_structured_logging(log_level: str = "INFO") -> None:
-    """
-    Initialize structured JSON logging for the application.
-
-    Args:
-        log_level: Logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
-
-    Example:
-        from src.utils.logging_utils import setup_structured_logging
-        setup_structured_logging("DEBUG")
-    """
+def setup_structured_logging(
+    log_level: str = "INFO",
+    log_to_file: bool = True,  # ← set False in CI / tests
+    log_dir: str = "logs",
+) -> None:
     console_handler = logging.StreamHandler(sys.stdout)
     console_handler.setFormatter(StructuredFormatter())
 
-    file_handler = RotatingFileHandler(
-        "logs/orchestrator.log", maxBytes=10 * 1024 * 1024, backupCount=5
-    )
-    file_handler.setFormatter(StructuredFormatter())
+    handlers: list[logging.Handler] = [console_handler]
+
+    if log_to_file:
+        Path(log_dir).mkdir(exist_ok=True)
+        file_handler = RotatingFileHandler(
+            f"{log_dir}/orchestrator.log",
+            maxBytes=10 * 1024 * 1024,
+            backupCount=5,
+        )
+        file_handler.setFormatter(StructuredFormatter())
+        handlers.append(file_handler)
 
     root_logger = logging.getLogger()
     root_logger.setLevel(getattr(logging, log_level.upper(), logging.INFO))
-
-    # Remove existing handlers to avoid duplicates
     for h in root_logger.handlers[:]:
         root_logger.removeHandler(h)
-
-    root_logger.addHandler(console_handler)
-    root_logger.addHandler(file_handler)
-
-    logger = logging.getLogger(__name__)
-    logger.info("Structured logging initialized", extra={"extra_data": {"level": log_level}})
+    for h in handlers:
+        root_logger.addHandler(h)
 
 
 def set_correlation_id(request_id: str | None = None) -> str:

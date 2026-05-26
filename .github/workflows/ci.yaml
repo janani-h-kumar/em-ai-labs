@@ -144,11 +144,10 @@ jobs:
   # ──────────────────────────────────────────────
   # JOB 4: Integration tests
   # ──────────────────────────────────────────────
-  integration-tests:
+ integration-tests:
     name: Integration tests
     runs-on: ubuntu-latest
     needs: [unit-tests]
-
     if: ${{ github.repository_owner == 'janani-h-kumar' && github.event_name == 'push' }}
 
     steps:
@@ -168,26 +167,53 @@ jobs:
       - name: Install dependencies
         run: uv sync --extra dev
 
-      - name: Install and start Ollama
-        run: |
-          curl -fsSL https://ollama.com/install.sh | sh
+      - name: Install Ollama
+        run: curl -fsSL https://ollama.com/install.sh | sh
 
+      - name: Start Ollama and wait for readiness
+        run: |
           nohup ollama serve > ollama.log 2>&1 &
-          sleep 10
+          echo "Waiting for Ollama to be ready..."
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:11434/api/tags > /dev/null 2>&1; then
+              echo "Ollama is ready after ${i}s"
+              break
+            fi
+            sleep 1
+          done
+          curl -sf http://localhost:11434/api/tags || (cat ollama.log && exit 1)
 
-          ollama pull phi3:mini
+      - name: Pull model
+        run: ollama pull phi3:mini
 
-      - name: Verify Ollama health
+      - name: Verify model loaded
         run: |
-          curl http://localhost:11434/api/tags
+          ollama list
+          curl -sf http://localhost:11434/api/tags | python3 -c "
+          import json, sys
+          data = json.load(sys.stdin)
+          models = [m['name'] for m in data.get('models', [])]
+          print('Loaded models:', models)
+          assert any('phi3' in m for m in models), f'phi3 not found in {models}'
+          "
 
       - name: Run integration tests
         run: |
           uv run pytest tests/integration/ \
             -v \
             --tb=short \
-            -m integration
+            -m integration \
+            --no-cov
         env:
           OLLAMA_HOST: http://localhost:11434
+          OLLAMA_MODEL: phi3:mini
           WEATHER_API_KEY: ${{ secrets.WEATHER_API_KEY }}
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+
+      - name: Upload Ollama logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ollama-logs
+          path: ollama.log
+          retention-days: 3
