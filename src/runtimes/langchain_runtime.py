@@ -16,6 +16,10 @@ from langchain_core.runnables.history import RunnableWithMessageHistory
 from langchain_core.tools import Tool
 from langchain_ollama import ChatOllama
 
+from src.memory.conversation_memory import (
+    BaseMemory,
+    InProcessMemory,
+)
 from src.middleware.retry import retry_with_backoff
 from src.runtimes.base_runtime import BaseRuntime, RuntimeTelemetry
 from src.utils.config_loader import ConfigManager
@@ -59,14 +63,15 @@ class LangChainRuntime(BaseRuntime):
         self,
         config_manager: ConfigManager,
         tools: list[Tool] | None = None,
-    ):
+        memory: BaseMemory | None = None,
+    ) -> None:
         super().__init__(name="LangChainRuntime")
 
         try:
             self.config_manager = config_manager
 
             # ENTERPRISE MEMORY STORE: Partitioned by tracking session IDs
-            self._history_store: dict[str, InMemoryChatMessageHistory] = {}
+            self.conversational_memory = memory or InProcessMemory()
 
             ollama_base_url = config_manager.get("env.OLLAMA_BASE_URL", "http://localhost:11434")
             ollama_model = config_manager.get("env.LLM_MODEL", default="llama3.1")
@@ -123,15 +128,6 @@ class LangChainRuntime(BaseRuntime):
         except Exception as e:
             # FIXED G004: Converted to lazy formatting
             logger.warning("Warmup failed: %s", e)
-
-    # -----------------------------------------------------------------------
-    # Stateful Memory Helper
-    # -----------------------------------------------------------------------
-    def _get_session_history(self, session_id: str) -> InMemoryChatMessageHistory:
-        """Retrieves or spins up an isolated chat history stack for a session."""
-        if session_id not in self._history_store:
-            self._history_store[session_id] = InMemoryChatMessageHistory()
-        return self._history_store[session_id]
 
     # -----------------------------------------------------------------------
     # Modern Tool Agent Compiler
@@ -224,6 +220,13 @@ class LangChainRuntime(BaseRuntime):
         finally:
             reset_correlation_id()  # ← clean slate for next request
 
+    def _get_session_history(
+        self,
+        session_id: str,
+    ) -> InMemoryChatMessageHistory:
+        """Return session chat history."""
+        return self.conversational_memory.get_history(session_id)
+
     def set_tools(self, tools: list[Tool]) -> None:
         super().set_tools(tools)
 
@@ -254,6 +257,6 @@ class LangChainRuntime(BaseRuntime):
             "runtime": self.name,
             "status": "healthy" if ollama_status == "up" else "degraded",
             "ollama": ollama_status,
-            "active_sessions": len(self._history_store),
+            "active_sessions": len(self.conversational_memory),
             "agent_executor_initialized": self.agent_executor is not None,
         }
