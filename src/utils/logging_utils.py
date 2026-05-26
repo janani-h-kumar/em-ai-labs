@@ -48,7 +48,7 @@ class StructuredFormatter(logging.Formatter):
             "level": record.levelname,
             "logger": record.name,
             "message": record.getMessage(),
-            "correlation_id": get_correlation_id(),
+            "correlation_id": get_correlation_id() or "untracked",
             "log_version": 1,
             "service": SERVICE_NAME,
             "environment": ENVIRONMENT,
@@ -73,6 +73,11 @@ def get_correlation_id() -> str:
         cid = str(uuid.uuid4())
         correlation_id.set(cid)
     return cid
+
+
+def reset_correlation_id() -> None:
+    """Call at the end of request processing to clear the context."""
+    correlation_id.set(None)
 
 
 def setup_structured_logging(

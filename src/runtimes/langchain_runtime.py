@@ -19,7 +19,7 @@ from langchain_ollama import ChatOllama
 from src.middleware.retry import retry_with_backoff
 from src.runtimes.base_runtime import BaseRuntime, RuntimeTelemetry
 from src.utils.config_loader import ConfigManager
-from src.utils.logging_utils import set_correlation_id
+from src.utils.logging_utils import reset_correlation_id, set_correlation_id
 
 logger = logging.getLogger(__name__)
 
@@ -220,6 +220,9 @@ class LangChainRuntime(BaseRuntime):
                 "Runtime execution failed: %s", e, extra={"extra_data": {"request_id": request_id}}
             )
             raise LangChainRuntimeExecutionError("Failed to execute: %s", e) from e
+
+        finally:
+            reset_correlation_id()  # ← clean slate for next request
 
     def set_tools(self, tools: list[Tool]) -> None:
         super().set_tools(tools)
