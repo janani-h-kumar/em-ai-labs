@@ -177,11 +177,21 @@ jobs:
 
       - name: Start Ollama and wait for readiness
         run: |
+          # Defensive check: Ensure no stale background processes are clinging to the port
+          pkill ollama || true
+
+          echo "Starting Ollama daemon..."
           nohup ollama serve > ollama.log 2>&1 &
-          echo "Waiting for Ollama to be ready..."
-          for i in $(seq 1 30); do
+
+          echo "Waiting for Ollama to bind to http://localhost:11434..."
+          for i in {1..30}; do
             if curl -sf http://localhost:11434/api/tags > /dev/null 2>&1; then
-              echo "Ollama is ready after ${i}s"
-              break
+              echo "Ollama is online and responsive after ${i}s."
+              exit 0
             fi
-            sleep
+            sleep 1
+          done
+
+          echo "❌ Ollama failed to initialize within 30 seconds. Printing execution log:"
+          cat ollama.log
+          exit 1
