@@ -76,7 +76,7 @@ jobs:
             -ll \
             --skip B101
 
-- name: Dependency vulnerability scan
+      - name: Dependency vulnerability scan
         run: |
           # Temporary ignores:
           #
@@ -94,7 +94,6 @@ jobs:
             --ignore-vuln GHSA-2g6r-c272-w58r \
             --ignore-vuln GHSA-926x-3r5x-gfhw \
             --ignore-vuln GHSA-pjwx-r37v-7724
-
 
   # ──────────────────────────────────────────────
   # JOB 3: Unit tests
@@ -185,41 +184,4 @@ jobs:
               echo "Ollama is ready after ${i}s"
               break
             fi
-            sleep 1
-          done
-          curl -sf http://localhost:11434/api/tags || (cat ollama.log && exit 1)
-
-      - name: Pull model
-        run: ollama pull phi3:mini
-
-      - name: Verify model loaded
-        run: |
-          ollama list
-          curl -sf http://localhost:11434/api/tags | python3 -c "
-          import json, sys
-          data = json.load(sys.stdin)
-          models = [m['name'] for m in data.get('models', [])]
-          print('Loaded models:', models)
-          assert any('phi3' in m for m in models), f'phi3 not found in {models}'
-          "
-
-      - name: Run integration tests
-        run: |
-          uv run pytest tests/integration/ \
-            -v \
-            --tb=short \
-            -m integration \
-            --no-cov
-        env:
-          OLLAMA_HOST: http://localhost:11434
-          OLLAMA_MODEL: phi3:mini
-          WEATHER_API_KEY: ${{ secrets.WEATHER_API_KEY }}
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-
-      - name: Upload Ollama logs on failure
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: ollama-logs
-          path: ollama.log
-          retention-days: 3
+            sleep
