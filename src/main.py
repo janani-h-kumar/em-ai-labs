@@ -95,7 +95,7 @@ class ToolManager:
             except Exception as e:
                 logger.warning("Failed to load tool '%s': %s", config.name, e)
 
-        logger.info("Total tools initialized generic registry: %d", len(tools))
+        logger.info("Total tools initialized generic registry: %s", len(tools))
         return tools
 
 

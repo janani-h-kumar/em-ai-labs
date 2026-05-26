@@ -122,7 +122,7 @@ class OllamaClient(BaseLLMProvider):
             )
             if response.status_code != 200:
                 raise OllamaConnectionError(
-                    "Ollama server returned status %d", response.status_code
+                    "Ollama server returned status %s", response.status_code
                 )
             logger.info("Successfully connected to Ollama server")
         except requests.ConnectionError as e:

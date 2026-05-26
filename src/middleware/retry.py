@@ -76,7 +76,7 @@ def retry_with_backoff(
             last_exception = None
             for attempt in range(max_retries):
                 try:
-                    logger.debug("Attempt %d/%d: %s", attempt + 1, max_retries, func.__name__)
+                    logger.debug("Attempt %s/%s: %s", attempt + 1, max_retries, func.__name__)
                     return func(*args, **kwargs)
                 except Exception as e:
                     last_exception = e
@@ -94,18 +94,20 @@ def retry_with_backoff(
                         delay = base_delay * (backoff_factor**attempt)
                         jitter = delay * jitter_factor * (2 * random.random() - 1)
                         sleep_time = max(0.0, delay + jitter)
+
                         logger.warning(
-                            "%s failed (attempt %d/%d), retrying in %.2f}s: %s",
+                            "%s failed (attempt %s/%s), retrying in %s seconds: %s",
                             func.__name__,
                             attempt + 1,
                             max_retries,
                             sleep_time,
                             str(e)[:100],
                         )
+
                         time.sleep(sleep_time)
                     else:
                         logger.error(
-                            "%s failed after %d attempts: %s", func.__name__, max_retries, e
+                            "%s failed after %s attempts: %s", func.__name__, max_retries, e
                         )
             raise last_exception  # type: ignore[misc]
 

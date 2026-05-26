@@ -194,7 +194,7 @@ class LangChainRuntime(BaseRuntime):
                     result = future.result(timeout=self.INVOKE_TIMEOUT_SECONDS)
                 except concurrent.futures.TimeoutError as e:
                     raise LangChainRuntimeExecutionError(
-                        "Agent timed out after %d seconds.", self.INVOKE_TIMEOUT_SECONDS
+                        "Agent timed out after %s seconds.", self.INVOKE_TIMEOUT_SECONDS
                     ) from e
 
             response = result.get("output", "No response generated.")

@@ -126,7 +126,7 @@ class MessageRouter:
         confidence = min(scores[best_agent] / 20.0, 1.0)
 
         logger.debug(
-            "Message routed to '%s' with confidence %.2f",
+            "Message routed to '%s' with confidence %s",
             best_agent,
             confidence,
         )

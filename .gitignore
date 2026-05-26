@@ -1,14 +1,12 @@
 # Virtual environment
 venv/
-__pycache__/
-ruff_cache/
-.mypy_cache/
 *.pyc
 *.pyo
 *.pyd
 .Python
 .venv/
 logs/
+
 
 # Configuration with sensitive data
 config.yaml
@@ -36,3 +34,7 @@ dist/
 build/
 *.egg-info/
 .pytest_cache/
+__pycache__/
+ruff_cache/
+.mypy_cache/
+.coverage

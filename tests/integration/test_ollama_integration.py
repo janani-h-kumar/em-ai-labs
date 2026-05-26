@@ -47,3 +47,12 @@ class TestOllamaIntegration:
         assert isinstance(model, str)
         assert len(model) > 0
         # Don't assert a specific model name — it is config-driven
+
+    def test_health_check_returns_structured_dict(self, ollama_client):
+        """
+        health_check() must return a dict with at minimum: agent, status, initialized.
+        This test is what a Kubernetes liveness probe would verify.
+        """
+        result = ollama_client.health_check()
+        assert isinstance(result, dict)
+        assert result.get("status") in ("healthy", "degraded")

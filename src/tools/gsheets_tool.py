@@ -129,7 +129,7 @@ class SheetsClient:
         self._append_rows(_TAB_TRANSACTIONS, rows)
 
         # FIXED G004: Swapped out f-string for standard log parameterization
-        logger.info("Appended %d transaction(s) to '%s'", len(rows), _TAB_TRANSACTIONS)
+        logger.info("Appended %s transaction(s) to '%s'", len(rows), _TAB_TRANSACTIONS)
         return len(rows)
 
     def read_transactions(self, month: str | None = None) -> list[dict]:
@@ -194,7 +194,7 @@ class SheetsClient:
         ).execute()
 
         # FIXED G004: Swapped out f-string for standard log parameterization
-        logger.info("Updated row %d in '%s'", row_index, _TAB_TRANSACTIONS)
+        logger.info("Updated row %s in '%s'", row_index, _TAB_TRANSACTIONS)
         return True
 
     # --------------------------------------------------------
@@ -230,7 +230,7 @@ class SheetsClient:
         self._append_rows(_TAB_SUMMARY, rows)
 
         # FIXED G004: Swapped out f-string for standard log parameterization
-        logger.info("Written %d summary row(s) to '%s'", len(rows), _TAB_SUMMARY)
+        logger.info("Written %s summary row(s) to '%s'", len(rows), _TAB_SUMMARY)
 
     def read_summary(self) -> list[dict]:
         """
