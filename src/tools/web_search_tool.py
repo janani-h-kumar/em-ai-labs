@@ -97,7 +97,7 @@ class WebSearchClient:
                     results.append(result)
 
             # FIXED G004: Swapped out f-string for standard log parameterization
-            logger.info("Search found %d results for: %s", len(results), query)
+            logger.info("Search found %s results for: %s", len(results), query)
             return results
 
         except requests.RequestException as e:

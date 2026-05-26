@@ -176,7 +176,7 @@ logger = logging.getLogger(__name__)   # module-scoped, never root logger
 # structured log levels:
 logger.debug("Fetching weather data for city=%s units=%s", city, units)
 logger.info("WeatherAgent initialized model=%s", self.provider.model_name)
-logger.warning("Retrying request attempt=%d/%d", attempt, max_retries)
+logger.warning("Retrying request attempt=%s/%s", attempt, max_retries)
 logger.error("WeatherTool failed city=%s error=%s", city, e, exc_info=True)
 ```
 

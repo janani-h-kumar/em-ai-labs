@@ -122,7 +122,7 @@ def _process_directory(dir_path: Path, llm_caller: LLMCaller) -> list[dict]:
 
     # FIXED G004: Swapped out f-string for standard log parameterization
     logger.info(
-        "[vision_extractor] '%s/' — %d image(s), %d PDF(s)", dir_path.name, len(images), len(pdfs)
+        "[vision_extractor] '%s/' — %s image(s), %s PDF(s)", dir_path.name, len(images), len(pdfs)
     )
 
     all_transactions = []
@@ -156,7 +156,7 @@ def _process_pdf(pdf_path: Path, llm_caller: LLMCaller) -> list[dict]:
     all_transactions = []
 
     # FIXED G004: Swapped out f-string for standard log parameterization
-    logger.info("[vision_extractor] PDF '%s' — %d page(s)", pdf_path.name, len(doc))
+    logger.info("[vision_extractor] PDF '%s' — %s page(s)", pdf_path.name, len(doc))
 
     prompt = _build_prompt()
 
@@ -166,12 +166,12 @@ def _process_pdf(pdf_path: Path, llm_caller: LLMCaller) -> list[dict]:
 
         if len(text) > 100:
             # FIXED G004: Swapped out f-string for standard log parameterization
-            logger.info("   -> Page %d: text mode", page_num)
+            logger.info("   -> Page %s: text mode", page_num)
             prompt = _build_prompt(extracted_text=text)
             raw = llm_caller(prompt, None, None)
         else:
             # FIXED G004: Swapped out f-string for standard log parameterization
-            logger.info("   -> Page %d: vision mode (scanned or image-only)", page_num)
+            logger.info("   -> Page %s: vision mode (scanned or image-only)", page_num)
             pix = page.get_pixmap(dpi=150)
             tmp_fd, tmp_path = tempfile.mkstemp(suffix=".png")
             os.close(tmp_fd)

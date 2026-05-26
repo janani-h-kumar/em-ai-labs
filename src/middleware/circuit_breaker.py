@@ -134,7 +134,7 @@ class CircuitBreaker:
         elif self.failure_count >= self.failure_threshold:
             self.state = CircuitState.OPEN
             logger.error(
-                "[%s] Circuit OPEN after %d failures", self.service_name, self.failure_count
+                "[%s] Circuit OPEN after %s failures", self.service_name, self.failure_count
             )
 
     def get_state(self) -> dict[str, Any]:
