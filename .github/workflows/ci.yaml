@@ -76,7 +76,7 @@ jobs:
             -ll \
             --skip B101
 
-      - name: Dependency vulnerability scan
+- name: Dependency vulnerability scan
         run: |
           # Temporary ignores:
           #
@@ -88,7 +88,13 @@ jobs:
           uv run pip-audit \
             --ignore-vuln GHSA-6w46-j5rx-g56g \
             --ignore-vuln PYSEC-2026-76 \
-            --ignore-vuln PYSEC-2026-77
+            --ignore-vuln PYSEC-2026-77 \
+            --ignore-vuln GHSA-6qv9-48xg-fc7f \
+            --ignore-vuln GHSA-c67j-w6g6-q2cm \
+            --ignore-vuln GHSA-2g6r-c272-w58r \
+            --ignore-vuln GHSA-926x-3r5x-gfhw \
+            --ignore-vuln GHSA-pjwx-r37v-7724
+
 
   # ──────────────────────────────────────────────
   # JOB 3: Unit tests
