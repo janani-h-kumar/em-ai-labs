@@ -8,13 +8,11 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from langchain_core.tools import Tool
 from pydantic import BaseModel
 
 from src.router import MessageRouter
 from src.runtimes.runtime_factory import RuntimeFactory
-from src.tools.weather_tool import WeatherClient, WeatherInput
-from src.tools.web_search_tool import WebSearchClient, WebSearchInput
+from src.tools.tool_registry import ToolRegistry
 from src.utils.config_loader import ConfigManager
 from src.utils.logging_utils import set_correlation_id, setup_structured_logging
 
@@ -38,65 +36,6 @@ class ToolConfig:
         self.description = description
         self.args_schema = args_schema
         self.factory_fn = factory_fn
-
-
-class ToolManager:
-    """Handles registry and clean runtime initialization of external agent tools."""
-
-    def __init__(self, config_manager: ConfigManager):
-        self.config_manager = config_manager
-
-        # Central Registry: Adding new tools down the road happens strictly here
-        self._tool_registry: list[ToolConfig] = [
-            ToolConfig(
-                name="weather",
-                description="Get current weather for a city. Input: city name. Output: temperature, condition, humidity.",
-                args_schema=WeatherInput,
-                factory_fn=lambda manager: (
-                    lambda *args, **kwargs: str(
-                        WeatherClient(manager.config_manager).get_temperature(
-                            city=kwargs.get("city") or (args[0] if args else None)
-                        )
-                    )
-                ),
-            ),
-            ToolConfig(
-                name="web_search",
-                description="Search the web. Input: query string. Output: titles, URLs, snippets.",
-                args_schema=WebSearchInput,
-                factory_fn=lambda manager: (
-                    lambda *args, **kwargs: str(
-                        WebSearchClient().search_as_dict(
-                            query=kwargs.get("query") or (args[0] if args else None),
-                            num_results=3,
-                        )
-                    )
-                ),
-            ),
-        ]
-
-    def initialize_tools(self) -> list[Tool]:
-        """Loops through registry to instantiate LangChain-compatible executable tools."""
-        tools: list[Tool] = []
-
-        for config in self._tool_registry:
-            try:
-                executable_func = config.factory_fn(self)
-
-                tool = Tool(
-                    name=config.name,
-                    func=executable_func,
-                    description=config.description,
-                    args_schema=config.args_schema,
-                )
-                tools.append(tool)
-                logger.info("Tool '%s' loaded successfully", config.name)
-
-            except Exception as e:
-                logger.warning("Failed to load tool '%s': %s", config.name, e)
-
-        logger.info("Total tools initialized generic registry: %s", len(tools))
-        return tools
 
 
 # --- Core Orchestrator ---
@@ -125,8 +64,9 @@ class AgentManager:
 
             logger.info("Initialising tools via Generic ToolManager...")
             # Here is the clean integration swap:
-            self.tool_manager = ToolManager(self.config_manager)
-            self.tools = self.tool_manager.initialize_tools()
+            tool_registry = ToolRegistry(self.config_manager)
+            tool_registry.discover_tools()
+            self.tools = tool_registry.get_langchain_tools()
 
             runtime_type = self.config_manager.get("runtime.orchestration", default="langchain")
             logger.info("Creating runtime: %s", runtime_type)
