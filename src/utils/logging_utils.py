@@ -17,6 +17,8 @@ from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from typing import Any
 
+from src.utils.log_filters import PIIRedactionFilter
+
 # Path("logs").mkdir(exist_ok=True)
 
 SERVICE_NAME = "em-ai-labs"
@@ -98,6 +100,7 @@ def setup_structured_logging(
             backupCount=5,
         )
         file_handler.setFormatter(StructuredFormatter())
+        file_handler.addFilter(PIIRedactionFilter())
         handlers.append(file_handler)
 
     root_logger = logging.getLogger()
