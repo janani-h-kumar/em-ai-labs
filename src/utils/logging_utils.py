@@ -49,7 +49,7 @@ class StructuredFormatter(logging.Formatter):
             "timestamp": datetime.utcnow().isoformat(),
             "level": record.levelname,
             "logger": record.name,
-            "message": record.getMessage(),
+            "message": _safe_message(record),
             "correlation_id": get_correlation_id() or "untracked",
             "log_version": 1,
             "service": SERVICE_NAME,
@@ -80,6 +80,13 @@ def get_correlation_id() -> str:
 def reset_correlation_id() -> None:
     """Call at the end of request processing to clear the context."""
     correlation_id.set(None)
+
+
+def _safe_message(record: logging.LogRecord) -> str:
+    try:
+        return record.getMessage()
+    except Exception as exc:
+        return f"[LogFormatError] msg={record.msg!r} args={record.args!r} error={exc}"
 
 
 def setup_structured_logging(
