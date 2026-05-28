@@ -5,40 +5,48 @@ Dynamic dependency-aware agent factory.
 import inspect
 import logging
 
+from src.agents.weather_agent import WeatherAgent
+
 logger = logging.getLogger(__name__)
 
 
 class AgentFactory:
     """
-    Dynamically constructs agents using constructor introspection.
+    Constructs agents using constructor introspection.
 
-    Responsibilities:
-    - Resolve dependencies from ServiceContainer
-    - Inject only required dependencies
-    - Avoid hardcoded agent wiring
     """
 
     def __init__(
         self,
-        container,
+        config_manager,
+        provider,
+        tool_registry,
     ):
-        self.container = container
+        self.provider = provider
+        self.tool_registry = tool_registry
+        self.config_manager = (
+            config_manager  # ConfigManager can be injected if needed in the future
+        )
 
     def create(
         self,
         agent_class,
     ):
-        """
-        Dynamically construct an agent instance.
+        return WeatherAgent(
+            config_manager=self.config_manager,
+            base_llm_provider=self.provider,
+            weather_tool=self.tool_registry.get_tool("weather_tool"),
+        )
 
-        Uses constructor parameter names to resolve
-        dependencies from the container.
-        """
-
+    def create_dynamic(
+        self,
+        agent_class,
+    ):
         signature = inspect.signature(agent_class.__init__)
 
         kwargs = {}
 
+        # dynamic creation can be resumed later. For now we only have one agent and we want to keep it simple.
         for param_name in signature.parameters:
             # -----------------------------------------
             # Skip self

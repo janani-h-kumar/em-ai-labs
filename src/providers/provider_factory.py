@@ -28,11 +28,3 @@ class ProviderFactory:
             return ClaudeProvider(config_manager)
 
         raise ValueError(f"Unknown provider: {provider}. Choose 'ollama' or 'claude'.")
-
-
-def get_provider(config_manager) -> BaseLLMProvider:
-    """
-    Backward-compatible helper function.
-    Existing code importing get_provider() will continue to work.
-    """
-    return ProviderFactory.get_provider(config_manager)

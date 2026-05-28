@@ -4,14 +4,14 @@ WeatherAgent implementation using explicit Dependency Injection.
 
 import logging
 import re
-from typing import Any
 
 from src.agents.base_agent import (
     AgentExecutionError,
     AgentInitError,
     BaseAgent,
 )
-from src.tools.weather_tool import CityNotFoundError
+from src.providers.base_provider import BaseLLMProvider
+from src.tools.weather_tool import CityNotFoundError, WeatherTool
 from src.utils.config_loader import ConfigManager
 
 logger = logging.getLogger(__name__)
@@ -34,8 +34,8 @@ class WeatherAgent(BaseAgent):
     def __init__(
         self,
         config_manager: ConfigManager,
-        base_llm_provider: Any,
-        weather_tool: Any,
+        base_llm_provider: BaseLLMProvider,
+        weather_tool: WeatherTool,
     ) -> None:
         self.name = "weather_agent"
         self.base_llm_provider = base_llm_provider

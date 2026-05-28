@@ -33,7 +33,9 @@ class AgentRegistry:
         self.agents = {}
 
         self.agent_factory = AgentFactory(
-            container=container,
+            config_manager=container.config_manager,
+            provider=container.provider,
+            tool_registry=container.tool_registry,
         )
 
         self.discover_agents()
@@ -143,10 +145,11 @@ class AgentRegistry:
                     agent_name,
                 )
 
-            except Exception:
+            except Exception as e:
                 logger.exception(
-                    "Failed to register agent class: %s",
+                    "Failed to register agent class: %s with error: %s",
                     obj.__name__,
+                    str(e),
                 )
 
     def get(
