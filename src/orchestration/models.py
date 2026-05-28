@@ -7,7 +7,7 @@ from enum import Enum
 from typing import Any
 
 
-class TaskStatus(str, Enum):
+class TaskStatus(Enum):
     """
     Lifecycle states for orchestration tasks.
     """
