@@ -93,9 +93,9 @@ def test_fetch_weather_success(mock_head, mock_get, mock_config):
 
     result = client.get_temperature("Seattle")
 
-    assert result["city"] == "Seattle"
-    assert result["temperature"] == 72
-    assert result["condition"] == "Clouds"
+    assert result.city == "Seattle"
+    assert result.temperature == 72
+    assert result.condition == "Clouds"
 
 
 # -------------------------

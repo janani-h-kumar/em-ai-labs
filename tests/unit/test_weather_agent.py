@@ -14,8 +14,11 @@ from src.middleware.circuit_breaker import (
     CircuitState,
 )
 from src.middleware.retry import retry_with_backoff
-from src.tools.weather_tool import CityNotFoundError
-from src.utils.config_loader import ConfigValidationError
+from src.tools.weather_tool import CityNotFoundError, WeatherResult
+from src.utils.config_loader import (
+    ConfigManager,
+    ConfigValidationError,
+)
 
 # ---------------------------------------------------------------------------
 # Shared Fixtures
@@ -23,14 +26,14 @@ from src.utils.config_loader import ConfigValidationError
 
 
 @pytest.fixture
-def agent(config_for_testing):
+def agent(config_for_testing: ConfigManager):
     """
     Fully initialized WeatherAgent fixture using dependency injection.
     """
     return WeatherAgent(
         config_manager=config_for_testing,
         base_llm_provider=Mock(),
-        weather_client=Mock(),
+        weather_tool=Mock(),
     )
 
 
@@ -40,14 +43,17 @@ def agent(config_for_testing):
 
 
 class TestWeatherAgentInitialization:
-    def test_agent_initializes_successfully(self, config_for_testing):
+    def test_agent_initializes_successfully(
+        self,
+        config_for_testing: ConfigManager,
+    ):
         mock_llm = Mock()
         mock_weather = Mock()
 
         agent = WeatherAgent(
             config_manager=config_for_testing,
             base_llm_provider=mock_llm,
-            weather_client=mock_weather,
+            weather_tool=mock_weather,
         )
 
         assert agent.is_initialized() is True
@@ -61,26 +67,29 @@ class TestWeatherAgentInitialization:
 
 
 class TestExtractCity:
-    def test_extracts_simple_city(self, agent):
+    def test_extracts_simple_city(self, agent: WeatherAgent):
         assert agent.extract_city("Weather in London") == "London"
 
-    def test_extracts_multi_word_city(self, agent):
+    def test_extracts_multi_word_city(self, agent: WeatherAgent):
         city = agent.extract_city("What is the weather in New York today?")
 
         assert city == "New York"
 
-    def test_does_not_return_filler_words(self, agent):
+    def test_does_not_return_filler_words(self, agent: WeatherAgent):
         city = agent.extract_city("what's the weather today?")
 
         assert city == "New York"
 
-    def test_empty_string_returns_default(self, agent):
+    def test_empty_string_returns_default(self, agent: WeatherAgent):
         assert agent.extract_city("") == "New York"
 
-    def test_none_like_empty_returns_default(self, agent):
+    def test_none_like_empty_returns_default(
+        self,
+        agent: WeatherAgent,
+    ):
         assert agent.extract_city("   ") == "New York"
 
-    def test_titled_city_extracted(self, agent):
+    def test_titled_city_extracted(self, agent: WeatherAgent):
         result = agent.extract_city("Is it raining in Paris?")
 
         assert result == "Paris"
@@ -92,23 +101,24 @@ class TestExtractCity:
 
 
 class TestWeatherSummary:
-    def test_get_weather_summary_returns_string(
+    @pytest.mark.asyncio
+    async def test_get_weather_summary_returns_string(
         self,
-        config_for_testing,
+        config_for_testing: ConfigManager,
     ):
-        mock_wc = Mock()
+        mock_wt = Mock()
 
-        mock_wc.get_temperature.return_value = {
-            "city": "London",
-            "country": "GB",
-            "temperature": 15.2,
-            "feels_like": 14.8,
-            "humidity": 72,
-            "pressure": 1013,
-            "condition": "Cloudy",
-            "description": "overcast clouds",
-            "units": "imperial",
-        }
+        mock_wt.get_temperature.return_value = WeatherResult(
+            city="London",
+            country="GB",
+            temperature=15.2,
+            feels_like=14.8,
+            humidity=72,
+            pressure=1013,
+            condition="Cloudy",
+            description="overcast clouds",
+            units="imperial",
+        )
 
         mock_llm = Mock()
 
@@ -117,49 +127,53 @@ class TestWeatherSummary:
         agent = WeatherAgent(
             config_manager=config_for_testing,
             base_llm_provider=mock_llm,
-            weather_client=mock_wc,
+            weather_tool=mock_wt,
         )
 
-        result = agent.get_weather_summary("London")
+        result = await agent.get_weather_summary("London")
 
         assert isinstance(result, str)
         assert len(result) > 0
 
-    def test_city_not_found_raises_execution_error(
-        self,
-        config_for_testing,
-    ):
-        mock_wc = Mock()
+        mock_wt.get_temperature.assert_called_once_with("London")
 
-        mock_wc.get_temperature.side_effect = CityNotFoundError("Fake City not found")
+    @pytest.mark.asyncio
+    async def test_city_not_found_raises_execution_error(
+        self,
+        config_for_testing: ConfigManager,
+    ):
+        mock_wt = Mock()
+
+        mock_wt.get_temperature.side_effect = CityNotFoundError("Fake City not found")
 
         agent = WeatherAgent(
             config_manager=config_for_testing,
             base_llm_provider=Mock(),
-            weather_client=mock_wc,
+            weather_tool=mock_wt,
         )
 
         with pytest.raises(
             WeatherAgentExecutionError,
             match="City not found",
         ):
-            agent.get_weather_summary("Fake City")
+            await agent.get_weather_summary("Fake City")
 
-    def test_empty_city_raises_value_error(
+    @pytest.mark.asyncio
+    async def test_empty_city_raises_value_error(
         self,
-        config_for_testing,
+        config_for_testing: ConfigManager,
     ):
         agent = WeatherAgent(
             config_manager=config_for_testing,
             base_llm_provider=Mock(),
-            weather_client=Mock(),
+            weather_tool=Mock(),
         )
 
         with pytest.raises(
             ValueError,
             match="non-empty",
         ):
-            agent.get_weather_summary("")
+            await agent.get_weather_summary("")
 
 
 # ---------------------------------------------------------------------------
@@ -168,12 +182,15 @@ class TestWeatherSummary:
 
 
 class TestConfigManager:
-    def test_get_existing_key(self, config_for_testing):
+    def test_get_existing_key(
+        self,
+        config_for_testing: ConfigManager,
+    ):
         assert config_for_testing.get("runtime.orchestration") == "langchain"
 
     def test_get_missing_key_returns_default(
         self,
-        config_for_testing,
+        config_for_testing: ConfigManager,
     ):
         assert (
             config_for_testing.get(
@@ -185,12 +202,15 @@ class TestConfigManager:
 
     def test_get_required_raises_on_missing(
         self,
-        config_for_testing,
+        config_for_testing: ConfigManager,
     ):
         with pytest.raises(ConfigValidationError):
             config_for_testing.get_required("env.DOES_NOT_EXIST")
 
-    def test_set_updates_value(self, config_for_testing):
+    def test_set_updates_value(
+        self,
+        config_for_testing: ConfigManager,
+    ):
         config_for_testing.set(
             "runtime.orchestration",
             "custom",
@@ -200,13 +220,13 @@ class TestConfigManager:
 
     def test_validate_startup_passes_with_full_config(
         self,
-        config_for_testing,
+        config_for_testing: ConfigManager,
     ):
         config_for_testing.validate_startup()
 
     def test_validate_startup_raises_on_missing_key(
         self,
-        config_for_testing,
+        config_for_testing: ConfigManager,
     ):
         config_for_testing._config["env"].pop(
             "OPENWEATHER_API_KEY",

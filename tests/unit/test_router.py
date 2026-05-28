@@ -12,7 +12,7 @@ def test_weather_route():
 
     agent, confidence = router.route_message("what is the weather in Seattle")
 
-    assert agent == "weather"
+    assert agent == "weather_agent"
     assert confidence > 0
 
 

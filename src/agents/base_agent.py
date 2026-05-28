@@ -57,7 +57,7 @@ class BaseAgent(ABC):
         class WeatherAgent(BaseAgent):
 
             def initialize(self) -> None:
-                self.weather_client = WeatherTool(self.config_manager)
+                self.weather_tool = WeatherTool(self.config_manager)
                 self.provider = get_provider(self.config_manager)
 
             def handle(self, message: str) -> str:
@@ -122,13 +122,18 @@ class BaseAgent(ABC):
 
         Example:
             def initialize(self) -> None:
-                self.weather_client = WeatherTool(self.config_manager)
+                self.weather_tool = WeatherTool(self.config_manager)
                 self.provider = get_provider(self.config_manager)
                 self.system_prompt = "You are a friendly weather assistant."
         """
 
     @abstractmethod
-    def handle(self, message: str) -> str:
+    async def handle(
+        self,
+        task,
+        context,
+    ):
+        pass
         """
         Process a user message and return a response string.
 

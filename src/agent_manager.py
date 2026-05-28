@@ -1,68 +1,98 @@
 """
-Enterprise agent manager with runtime orchestration and tooling.
+Enterprise Agent Manager.
+
+Responsibilities:
+- Bootstrap application components
+- Load configuration
+- Initialise orchestration system
+- Handle top-level request lifecycle
 """
 
+import asyncio
 import logging
 from pathlib import Path
 from typing import Any
 
+from src.agents.agent_registry import AgentRegistry
+from src.core.container import ServiceContainer
+from src.orchestration.orchestrator import Orchestrator
 from src.router import MessageRouter
-from src.runtimes.runtime_factory import RuntimeFactory
-from src.tools.tool_registry import ToolRegistry
 from src.utils.config_loader import ConfigManager
-from src.utils.logging_utils import set_correlation_id, setup_structured_logging
+from src.utils.logging_utils import (
+    set_correlation_id,
+    setup_structured_logging,
+)
 
-# Setup structured logging — must happen before any logger.getLogger() calls
+# Structured logging setup
 setup_structured_logging()
+
 logger = logging.getLogger(__name__)
 
 
-# --- Core Orchestrator ---
 class AgentManager:
     """
-    Enterprise agent manager with runtime orchestration.
-
-    Features:
-    - Config-driven runtime selection (LangChain, custom)
-    - Tool initialisation and integration via generic ToolManager
-    - Message routing and processing
-    - Health checks and telemetry
-    - Graceful error handling
+    Enterprise application manager for orchestration lifecycle.
     """
 
-    def __init__(self, config_path: str | None = None):
+    def __init__(
+        self,
+        config_path: str | None = None,
+    ):
+
         if config_path is None:
             config_path = str(Path(__file__).parent.parent / "configs" / "config.yaml")
 
         try:
-            logger.info("Loading configuration from: %s", config_path)
-            self.config_manager = ConfigManager(config_path)
-            self.config_manager.validate_startup()
-
-            logger.info("Initialising tools via Generic ToolManager...")
-            # Here is the clean integration swap:
-            tool_registry = ToolRegistry(self.config_manager)
-            tool_registry.discover_tools()
-            self.tools = tool_registry.get_langchain_tools()
-
-            runtime_type = self.config_manager.get("runtime.orchestration", default="langchain")
-            logger.info("Creating runtime: %s", runtime_type)
-            self.runtime = RuntimeFactory.create(
-                runtime_type=runtime_type,
-                config_manager=self.config_manager,
-                tools=self.tools,
+            logger.info(
+                "Loading configuration from: %s",
+                config_path,
             )
+
+            self.container = ServiceContainer(ConfigManager(config_path))
+            self.container.config_manager.validate_startup()
+
+            # -------------------------------------------------
+            # Agent Discovery
+            # -------------------------------------------------
+
+            logger.info("Initialising agent registry...")
+
+            self.agent_registry = AgentRegistry(container=self.container)
+
+            # -------------------------------------------------
+            # Router
+            # -------------------------------------------------
 
             self.router = MessageRouter()
 
+            # -------------------------------------------------
+            # Orchestrator
+            # -------------------------------------------------
+
+            logger.info("Initialising orchestrator...")
+
+            self.orchestrator = Orchestrator(
+                agent_registry=self.agent_registry,
+                router=self.router,
+            )
+
             logger.info("AgentManager initialised successfully")
+
             self._initialized = True
 
         except Exception as e:
-            logger.error("Failed to initialise AgentManager: %s", e)
-            raise
+            logger.exception("Failed to initialise AgentManager")
 
-    def handle(self, message: str) -> str:
+            raise e
+
+    async def handle(
+        self,
+        message: str,
+    ) -> str:
+        """
+        Top-level async request handler.
+        """
+
         request_id = set_correlation_id()
 
         try:
@@ -76,50 +106,67 @@ class AgentManager:
                 },
             )
 
-            agent_name, confidence = self.router.route_message(message)
+            response = await self.orchestrator.run(
+                goal=message,
+                session_id=request_id,
+            )
+
             logger.info(
-                "Message routed",
+                "Request completed successfully",
                 extra={
                     "extra_data": {
                         "request_id": request_id,
-                        "agent": agent_name,
-                        "confidence": confidence,
                     }
                 },
             )
 
-            response = self.runtime.invoke(message)
-
-            if self.runtime.get_telemetry():
-                telemetry = self.runtime.get_telemetry()
-                logger.info(
-                    "Response generated",
-                    extra={
-                        "extra_data": {
-                            "request_id": request_id,
-                            "tokens": telemetry.total_tokens,
-                            "latency_ms": telemetry.latency_ms,
-                            "cache_hit": telemetry.cache_hit,
-                        }
-                    },
-                )
-
             return response
 
-        except Exception as e:
-            logger.error(
-                "Failed to handle message: %s",
-                e,
-                extra={"extra_data": {"request_id": request_id}},
+        except Exception:
+            logger.exception(
+                "Failed to handle message",
+                extra={
+                    "extra_data": {
+                        "request_id": request_id,
+                    }
+                },
             )
-            return f"Sorry, I encountered an error: {e}"
 
-    def health_check(self) -> dict[str, Any]:
+            return "Sorry, I encountered an error while processing your request."
+
+    async def health_check(self) -> dict[str, Any]:
+        """
+        Application health status.
+        """
+
         return {
             "manager": "healthy",
-            "runtime": self.runtime.health_check(),
-            "tools": len(self.tools),
+            "orchestrator": "healthy",
+            "agents": self.agent_registry.list_agents(),
+            "tools": len(self.tool_registry.get_langchain_tools()),
         }
 
     def is_initialized(self) -> bool:
+        """
+        Check manager initialization status.
+        """
+
         return hasattr(self, "_initialized") and self._initialized
+
+
+# ---------------------------------------------------------
+# Optional Local Runner
+# ---------------------------------------------------------
+
+
+async def _main():
+
+    manager = AgentManager()
+
+    response = await manager.handle("What is the weather in Seattle?")
+
+    print(response)
+
+
+if __name__ == "__main__":
+    asyncio.run(_main())

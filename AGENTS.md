@@ -305,7 +305,7 @@ class WeatherAgent:
         try:
             self.config_manager = ConfigManager(config_path)
             self.ollama_client = OllamaClient(self.config_manager)
-            self.weather_client = WeatherClient(
+            self.weather_tool = WeatherTool(
                 WeatherConfigManager(config_path)
             )
             logger.info("Agent initialized")
@@ -317,7 +317,7 @@ class WeatherAgent:
         """Get summary with full error handling"""
         try:
             # Step 1: Get data
-            weather_data = self.weather_client.get_temperature(city)
+            weather_data = self.weather_tool.get_temperature(city)
             
             # Step 2: Format for LLM
             prompt = self._format_weather(weather_data)

@@ -4,7 +4,6 @@ Integrated with BaseTool architectural pattern.
 """
 
 import logging
-from typing import Any
 
 import requests
 from pydantic import BaseModel, Field
@@ -21,6 +20,18 @@ class WeatherInput(BaseModel):
     city: str = Field(
         description="The name of the city to look up the weather for, e.g., 'New York'"
     )
+
+
+class WeatherResult(BaseModel):
+    city: str
+    country: str
+    temperature: float
+    feels_like: float
+    humidity: int
+    pressure: int
+    condition: str
+    description: str
+    units: str
 
 
 # Custom Exceptions (Compliant with N818: All end with 'Error' suffix)
@@ -82,14 +93,13 @@ class WeatherClient:
                 f"Weather API at {self.base_url} did not respond within 5s."
             ) from e
 
-    def get_temperature(self, city: str, units: str = "imperial") -> dict[str, Any]:
+    def get_temperature(self, city: str, units: str = "imperial") -> WeatherResult:
         if not city or not isinstance(city, str) or not city.strip():
             raise ValueError("City name must be a non-empty string")
         return self._circuit_breaker.call(self._fetch_weather, city.strip(), units)
 
-    def _fetch_weather(self, city: str, units: str) -> dict[str, Any]:
+    def _fetch_weather(self, city: str, units: str) -> WeatherResult:
         try:
-            # FIXED G004: Swapped out f-string for percentage-style lazy logging format
             logger.info("Fetching weather for city: %s", city)
             response = requests.get(
                 f"{self.base_url}/weather",
@@ -106,17 +116,17 @@ class WeatherClient:
                 raise WeatherAPIError(f"Weather API error {response.status_code}")
 
             data = response.json()
-            return {
-                "city": data.get("name"),
-                "country": data.get("sys", {}).get("country"),
-                "temperature": data.get("main", {}).get("temp"),
-                "feels_like": data.get("main", {}).get("feels_like"),
-                "humidity": data.get("main", {}).get("humidity"),
-                "pressure": data.get("main", {}).get("pressure"),
-                "condition": data.get("weather", [{}])[0].get("main"),
-                "description": data.get("weather", [{}])[0].get("description"),
-                "units": units,
-            }
+            return WeatherResult(
+                city=data.get("name"),
+                country=data.get("sys", {}).get("country"),
+                temperature=data.get("main", {}).get("temp"),
+                feels_like=data.get("main", {}).get("feels_like"),
+                humidity=data.get("main", {}).get("humidity"),
+                pressure=data.get("main", {}).get("pressure"),
+                condition=data.get("weather", [{}])[0].get("main"),
+                description=data.get("weather", [{}])[0].get("description"),
+                units=units,
+            )
         except (CityNotFoundError, WeatherAPIError):
             raise
         except requests.Timeout as e:
@@ -132,7 +142,7 @@ class WeatherClient:
 class WeatherTool(BaseTool):
     """LangChain integration interface for the Weather Client."""
 
-    name = "weather"
+    name = "weather_tool"
     description = "Get current weather for a city. Input: city name. Output: temperature, condition, humidity."
     args_schema = WeatherInput
 
@@ -150,3 +160,15 @@ class WeatherTool(BaseTool):
 
         # Execute via the local initialized client instance
         return str(self.client.get_temperature(city=city))
+
+    def get_temperature(
+        self,
+        city: str,
+        units: str = "imperial",
+    ) -> WeatherResult:
+        # Extract validated argument strings safely
+        if not city:
+            raise ValueError("City parameter is required.")
+
+        # Execute via the local initialized client instance
+        return self.client.get_temperature(city=city, units=units)

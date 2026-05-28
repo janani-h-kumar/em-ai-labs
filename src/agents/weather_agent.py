@@ -28,17 +28,18 @@ class WeatherAgent(BaseAgent):
     Dependencies are passed in from outside:
     - config_manager
     - base_llm_provider
-    - weather_client
+    - weather_tool
     """
 
     def __init__(
         self,
         config_manager: ConfigManager,
         base_llm_provider: Any,
-        weather_client: Any,
+        weather_tool: Any,
     ) -> None:
+        self.name = "weather_agent"
         self.base_llm_provider = base_llm_provider
-        self.weather_client = weather_client
+        self.weather_tool = weather_tool
 
         super().__init__(config_manager)
 
@@ -53,8 +54,8 @@ class WeatherAgent(BaseAgent):
         if self.base_llm_provider is None:
             raise AgentInitError("base_llm_provider is required")
 
-        if self.weather_client is None:
-            raise AgentInitError("weather_client is required")
+        if self.weather_tool is None:
+            raise AgentInitError("weather_tool is required")
 
         self.system_prompt = (
             "You are a helpful weather assistant. Provide concise and friendly weather summaries."
@@ -62,13 +63,13 @@ class WeatherAgent(BaseAgent):
 
         logger.info("WeatherAgent initialized successfully")
 
-    def handle(self, message: str) -> str:
+    async def handle(self, task: str, context: dict | None = None) -> dict:
         """
         Main router entrypoint.
         """
         try:
-            city = self.extract_city(message)
-            return self.get_weather_summary(city)
+            city = self.extract_city(task.description)
+            return await self.get_weather_summary(city)
 
         except WeatherAgentExecutionError:
             raise
@@ -113,7 +114,7 @@ class WeatherAgent(BaseAgent):
 
         return "New York"
 
-    def get_weather_summary(self, city: str) -> str:
+    async def get_weather_summary(self, city: str) -> str:
         """
         Fetch weather and generate summary.
         """
@@ -121,12 +122,12 @@ class WeatherAgent(BaseAgent):
             raise ValueError("city must be a non-empty string")
 
         try:
-            weather_data = self.weather_client.get_temperature(city)
+            weather_data = self.weather_tool.get_temperature(city)
 
             prompt = (
-                f"Weather in {weather_data['city']}: "
-                f"{weather_data['description']}, "
-                f"temperature {weather_data['temperature']}°."
+                f"Weather in {weather_data.city}: "
+                f"{weather_data.description}, "
+                f"temperature {weather_data.temperature}°."
             )
 
             summary = self.base_llm_provider.chat_completion(prompt)
