@@ -2,6 +2,7 @@
 Enterprise agent manager with runtime orchestration and tooling.
 """
 
+import asyncio
 import logging
 import time
 
@@ -13,7 +14,7 @@ setup_structured_logging()
 logger = logging.getLogger(__name__)
 
 
-def run_interactive_chat():
+async def run_interactive_chat():
     """Run interactive chat loop with agent system."""
     print("\n" + "=" * 50)
     print("AI Lab — Agent Orchestration System")
@@ -47,7 +48,8 @@ def run_interactive_chat():
                 print(f"\nSystem Health: {manager.health_check()}\n")
                 continue
 
-            print(f"\nAssistant: {manager.handle(msg)}\n")
+            response = await manager.handle(msg)
+            print(f"\nAssistant: {response}\n")
 
         except KeyboardInterrupt:
             print("\n\nGoodbye!\n")
@@ -58,4 +60,4 @@ def run_interactive_chat():
 
 
 if __name__ == "__main__":
-    run_interactive_chat()
+    asyncio.run(run_interactive_chat())

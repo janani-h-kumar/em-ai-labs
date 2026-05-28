@@ -28,7 +28,7 @@ class MessageRouter:
         """Initialize routing patterns."""
 
         self.agent_patterns = {
-            "weather": [
+            "weather_agent": [
                 ("weather", 10),
                 ("temperature", 10),
                 ("forecast", 10),
@@ -65,7 +65,7 @@ class MessageRouter:
         }
 
         self.regex_patterns = {
-            "weather": [
+            "weather_agent": [
                 (
                     re.compile(
                         r"weather (?:in|for|at) ([a-zA-Z\s]+)",
@@ -200,6 +200,9 @@ class MessageRouter:
             "all_scores": dict(scores),
         }
 
+    def route_task(self, task):
+        return route_message(task.description)
+
 
 # Global singleton router instance
 _router = MessageRouter()
@@ -224,6 +227,10 @@ def get_router() -> MessageRouter:
     Return global router instance.
     """
     return _router
+
+
+def route_task(self, task):
+    return route_message(task.description)
 
 
 class Router(MessageRouter):
