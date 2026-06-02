@@ -1,243 +1,295 @@
-# Architecture & Design — em-ai-labs
+# Architecture & design — em-ai-labs
 
-## 1. System context
+> Last updated: May 2026 · reflects master branch with orchestration
+
+---
+
+## 1. System overview
 
 ```
-┌──────────────────────────────────────────────────────────────┐
-│                        User / Client                          │
-│           (CLI · future: web UI · API endpoint)               │
-└─────────────────────────┬────────────────────────────────────┘
-                          │ natural language goal
-                          ▼
-┌──────────────────────────────────────────────────────────────┐
-│                      Orchestrator                             │
-│   Plans tasks · routes to agents · handles retries & errors  │
-└──────┬─────────────────┬────────────────────┬───────────────┘
-       │                 │                    │
-       ▼                 ▼                    ▼
-┌────────────┐  ┌────────────────┐  ┌─────────────────┐
-│WeatherAgent│  │ FinanceAgent   │  │   MusicAgent    │  ...
-│            │  │  (Phase 4)     │  │   (Phase 4)     │
-└──────┬─────┘  └───────┬────────┘  └────────┬────────┘
-       │                │                    │
-       ▼                ▼                    ▼
-┌────────────┐  ┌────────────────┐  ┌─────────────────┐
-│WeatherTool │  │CalculatorTool  │  │  SpotifyTool    │
-│(Phase 1 ✅)│  │  (Phase 2)     │  │   (Phase 4)     │
-└──────┬─────┘  └───────┬────────┘  └────────┬────────┘
-       └────────────────┴────────────────────┘
-                         │
-                         ▼
-              ┌──────────────────────┐
-              │   BaseLLMProvider    │  ← abstract interface
-              ├──────────┬───────────┤
-              │  Ollama  │  Claude   │  (swap via config, zero code change)
-              └──────────┴───────────┘
-                         │
-                         ▼
-              ┌──────────────────────┐
-              │       Memory         │
-              ├──────────────────────┤
-              │ ConversationMemory   │  short-term (in-process)
-              │ ChromaDB             │  long-term semantic (Phase 3)
-              └──────────────────────┘
-                         │
-                         ▼
-              ┌──────────────────────┐
-              │  Observability       │
-              │  logging · tracing   │
-              │  guardrails · evals  │
-              └──────────────────────┘
+User / Client
+     │  natural language goal
+     ▼
+AgentManager                    ← bootstrap, correlation ID, top-level error handling
+     │
+     ▼
+Orchestrator                    ← async run(goal, session_id)
+  ├── Planner                   ← create_plan() → list[Task]
+  ├── ReACTLoop                 ← iterate up to max_iterations
+  │     └── Executor            ← execute_task() / execute_parallel()
+  │           ├── MessageRouter ← keyword + regex scoring → agent_name
+  │           └── AgentRegistry ← pkgutil discovery → AgentFactory → agent instance
+  └── synthesize(results)       ← join outputs into final response
+         │
+         ▼
+     WeatherAgent (+ future: FinanceAgent, MusicAgent …)
+         ├── BaseLLMProvider    ← OllamaClient | ClaudeProvider
+         ├── WeatherTool        ← OpenWeatherMap API
+         └── InProcessMemory    ← session-partitioned chat history
+
+Supporting layers (all layers):
+  ServiceContainer              ← DI root: provider + tool_registry
+  ConfigManager                 ← YAML + .env, layered, get_required()
+  logging_utils                 ← StructuredFormatter JSON, ContextVar correlation IDs
+  log_filters                   ← PIIRedactionFilter on file handler
 ```
 
 ---
 
-## 2. Loose coupling — the design contract
-
-The harness is built around three abstract base classes. **No concrete class imports another concrete class directly.** Everything communicates through interfaces.
+## 2. Request lifecycle (step by step)
 
 ```
-BaseLLMProvider          BaseTool              BaseAgent
-─────────────            ─────────             ──────────
-chat_completion()        execute(input)        run(goal)
-health_check()           schema → dict         name → str
-model_name → str         name → str            tools → list[BaseTool]
-                                               provider → BaseLLMProvider
-```
+1.  User sends message
+2.  AgentManager.handle(message)
+      → set_correlation_id()          # new UUID per request
+      → orchestrator.run(goal, session_id=request_id)
 
-Agents receive their provider and tools **injected from outside** (dependency injection). This means:
-- You can test an agent with a mock provider — no Ollama required.
-- You can swap from Ollama to Claude by changing one config line.
-- A new contributor can add a tool without touching any agent file.
+3.  Orchestrator.run()
+      → memory_context = []           # TODO: load from InProcessMemory
+      → ExecutionContext(session_id, goal, memory)
+      → react_loop.run(goal, context)
 
----
+4.  ReACTLoop.run()
+      → planner.create_plan(goal, context)
+            returns [Task(id, description)]   # currently single-task; LLM decomp in Phase 4+
+      → for each task: executor.execute_task(task, context)
+      → break after first successful cycle   # loop scaffolding in place, not yet iterating
 
-## 3. Request flow — WeatherAgent (current, production-ready)
+5.  Executor.execute_task(task, context)
+      → task.status = RUNNING
+      → router.route_task(task)              # → agent_name
+      → agent_registry.get(agent_name)
+      → await agent.handle(task, context)
+      → task.status = COMPLETED
+      → context.completed_tasks[task.id] = result
 
-```
-main.py
-  │  user types "What's the weather in Seattle?"
-  ▼
-WeatherAgent.get_weather_summary("Seattle")
-  │
-  ├─► WeatherTool.get_temperature("Seattle", units="imperial")
-  │     │  HTTP GET → OpenWeatherMap API
-  │     │  Returns: {city, temp, condition, humidity, ...}
-  │     └─► WeatherAPIError on failure (caught, logged, re-raised as WeatherAgentExecutionError)
-  │
-  ├─► _format_weather_prompt(weather_data)   → structured LLM prompt
-  │
-  └─► OllamaClient.chat_completion(prompt, system_prompt)
-        │  POST → http://localhost:11434/api/chat
-        └─► Returns: "🌡️ Seattle is 52°F with drizzle — typical for May!"
-```
+6.  WeatherAgent.handle(task, context)
+      → extract_city(task.description)
+      → weather_tool.get_temperature(city)   # OpenWeatherMap
+      → provider.chat_completion(prompt)     # Ollama or Claude
+      → return summary string
 
----
+7.  Orchestrator.synthesize(results)
+      → "\n".join(results)                   # TODO: LLM synthesis call
 
-## 4. Request flow — Orchestrator (Phase 4 target)
-
-```
-User: "How much house can I afford on a $180k salary in Seattle?"
-  │
-  ▼
-Orchestrator.run(goal)
-  │
-  ├─ 1. Plan (LLM call):
-  │       → ["FinanceAgent: mortgage calc", "FinanceAgent: budget analysis"]
-  │
-  ├─ 2. Execute FinanceAgent.run(mortgage_params)
-  │       ├─► CalculatorTool.amortize(price, rate, term)
-  │       ├─► CalculatorTool.dti_ratio(income, debts)
-  │       └─► LLM: "Given these numbers, here's what you can afford..."
-  │
-  ├─ 3. Memory: store result in ChromaDB under user_id namespace
-  │
-  └─ 4. Return synthesized response + source trace
+8.  AgentManager returns response
+      → reset_correlation_id() in finally
 ```
 
 ---
 
-## 5. Provider abstraction (Phase 1 — in progress)
+## 3. Module map
+
+```
+src/
+├── agent_manager.py            # top-level entry point, AgentManager class
+├── router.py                   # MessageRouter, route_message(), get_router()
+│
+├── core/
+│   └── container.py            # ServiceContainer — DI root, builds provider + tool_registry
+│
+├── orchestration/
+│   ├── orchestrator.py         # Orchestrator — coordinates all sub-components
+│   ├── planner.py              # Planner — goal → list[Task]
+│   ├── react_loop.py           # ReACTLoop — iterative reason+act loop
+│   ├── executor.py             # Executor — run single or parallel tasks
+│   ├── task_graph.py           # TaskGraph — dependency resolution, ready-task detection
+│   └── models.py               # Task, ExecutionContext, TaskStatus (dataclasses + enum)
+│
+├── agents/
+│   ├── base_agent.py           # BaseAgent ABC, AgentError hierarchy
+│   ├── agent_factory.py        # AgentFactory — constructor introspection DI
+│   ├── agent_registry.py       # AgentRegistry — pkgutil auto-discovery
+│   └── weather_agent.py        # WeatherAgent — production agent #1
+│
+├── providers/
+│   ├── base_provider.py        # BaseLLMProvider ABC
+│   ├── ollama_provider.py      # OllamaClient
+│   ├── claude_provider.py      # ClaudeProvider
+│   └── provider_factory.py     # ProviderFactory.get_provider(config)
+│
+├── tools/
+│   ├── base_tool.py            # BaseTool ABC, _safe_execute()
+│   ├── tool_registry.py        # ToolRegistry — pkgutil auto-discovery
+│   ├── weather_tool.py         # OpenWeatherMap client
+│   ├── web_search_tool.py      # DuckDuckGo search
+│   ├── vision_extractor.py     # PDF/image → transactions
+│   └── gsheets_tool.py         # Google Sheets read/write
+│
+├── memory/
+│   ├── base_memory.py          # BaseMemory ABC
+│   └── conversation_memory.py  # InProcessMemory (+ duplicate BaseMemory — see known bugs)
+│
+└── utils/
+    ├── config_loader.py        # ConfigManager — YAML + .env, get_required(), validate_startup()
+    ├── logging_utils.py        # StructuredFormatter, correlation ID ContextVars
+    └── log_filters.py          # PIIRedactionFilter — email, hex keys, Bearer tokens
+```
+
+---
+
+## 4. Key design patterns
+
+### Dependency injection everywhere
+
+Nothing creates its own dependencies. `ServiceContainer` is the single construction site.
+`AgentFactory` uses constructor introspection to resolve `config_manager`, `base_llm_provider`,
+and named tools by parameter name — no hardcoded wiring.
 
 ```python
-# agents ONLY ever see this interface:
-class BaseLLMProvider(ABC):
-    def chat_completion(self, messages, system_prompt=None) -> str: ...
-    def health_check(self) -> bool: ...
-    @property
-    def model_name(self) -> str: ...
-
-# config.yaml drives which provider is instantiated:
-# llm:
-#   provider: ollama   ← or 'claude'
-
-# one factory, no if/else scattered across the codebase:
-provider = get_provider(config_manager)   # returns OllamaProvider or ClaudeProvider
-agent = WeatherAgent(provider=provider)   # agent doesn't know or care which one
+# AgentFactory resolves dependencies by parameter name:
+class WeatherAgent(BaseAgent):
+    def __init__(self, config_manager, base_llm_provider, weather_tool):
+        ...
+# AgentFactory inspects __init__, matches params to container attributes, injects.
 ```
 
----
+### Abstract base classes enforce contracts
 
-## 6. Exception hierarchy (current)
+`BaseLLMProvider`, `BaseTool`, `BaseAgent`, `BaseMemory` — all are ABCs.
+Python raises `TypeError` at instantiation time if a subclass skips an abstract method.
+No runtime surprises.
+
+### Auto-discovery for agents and tools
+
+Both `AgentRegistry` and `ToolRegistry` use `pkgutil.iter_modules` + `importlib.import_module`
+to scan their respective packages on startup. Adding a new agent or tool requires only:
+1. Create the file in `src/agents/` or `src/tools/`
+2. Inherit `BaseAgent` or `BaseTool`
+3. Implement the abstract methods
+
+No manual registration, no imports in `__init__.py`.
+
+### Structured JSON logging with correlation IDs
+
+Every log line is JSON with `timestamp`, `level`, `logger`, `message`, `correlation_id`,
+`service`, `environment`, `host`, and any `extra_data` dict.
+Correlation ID is a ContextVar set once per request in `AgentManager.handle()`.
+PIIRedactionFilter strips emails, hex API keys, and Bearer tokens from file handler output.
+
+### Exception hierarchy
 
 ```
 Exception
-├── OllamaError
-│   ├── ConfigError
-│   ├── ModelNotFoundError
-│   └── OllamaConnectionError
-├── WeatherError
-│   ├── WeatherConfigError
-│   ├── WeatherAPIError
-│   └── CityNotFoundError
-└── WeatherAgentError
-    ├── WeatherAgentInitError
-    └── WeatherAgentExecutionError
-
-Phase 1+ additions:
-├── ProviderError            ← base for all LLM provider failures
-│   ├── ProviderNotFoundError
-│   └── ProviderAuthError
-└── AgentError               ← base for all agent failures (replaces per-agent bases)
-    ├── AgentInitError
-    └── AgentExecutionError
+├── AgentError
+│   ├── AgentInitError
+│   └── AgentExecutionError
+│       └── WeatherAgentExecutionError
+├── (provider errors — in each provider module)
+└── (tool errors — in each tool module)
 ```
+
+Never raise bare `Exception`. Never catch bare `Exception` without re-raising as a typed error.
 
 ---
 
-## 7. Logging contract
+## 5. Data models
 
-Every module follows this pattern:
+### Task
 
 ```python
-import logging
-logger = logging.getLogger(__name__)   # module-scoped, never root logger
-
-# structured log levels:
-logger.debug("Fetching weather data for city=%s units=%s", city, units)
-logger.info("WeatherAgent initialized model=%s", self.provider.model_name)
-logger.warning("Retrying request attempt=%s/%s", attempt, max_retries)
-logger.error("WeatherTool failed city=%s error=%s", city, e, exc_info=True)
+@dataclass
+class Task:
+    id: str                          # UUID4
+    description: str                 # the goal text passed to the agent
+    assigned_agent: str | None       # None = router decides
+    dependencies: list[str]          # list of task IDs that must complete first
+    parallelizable: bool             # if True, executor can run concurrently
+    status: TaskStatus               # PENDING | RUNNING | COMPLETED | FAILED
+    result: Any                      # filled by executor after completion
 ```
 
-**What we do NOT do:**
-- `print()` in production code (use `logger.debug`)
-- `logging.basicConfig()` inside library modules (caller configures logging)
-- Log API keys, full prompts with PII, or raw weather payloads at INFO level
+### ExecutionContext
 
----
-
-## 8. Configuration loading order
-
-```
-1. configs/config.yaml.example   ← committed, safe template
-2. configs/config.yaml           ← local override, git-ignored
-3. configs/.env                  ← secrets, git-ignored
-4. OS environment variables      ← highest priority (overrides .env)
-
-ConfigManager resolves: config.get("env.weather_api_key")
-  → reads WEATHER_API_KEY from .env / env var
-  → never stores plaintext in config.yaml
+```python
+@dataclass
+class ExecutionContext:
+    session_id: str
+    goal: str
+    memory: list[str]                # TODO: populated from InProcessMemory
+    completed_tasks: dict[str, Any]  # task_id → result, grows during execution
+    metadata: dict[str, Any]         # extensible for future use
 ```
 
----
-
-## 9. Test strategy
+### TaskStatus lifecycle
 
 ```
-tests/
-├── unit/                    ← fast, no network, no LLM
-│   ├── test_config_manager.py
-│   ├── test_base_provider.py    (ABC enforcement, factory routing)
-│   ├── test_weather_tool.py     (mock HTTP responses)
-│   └── test_base_tool.py        (Phase 2)
-└── integration/             ← require external services, marked @pytest.mark.integration
-    ├── test_weather_agent.py    (real Ollama + real Weather API)
-    └── test_ollama_provider.py  (real Ollama health check)
-
-CI runs:   pytest tests/unit/ -v           ← always, no services needed
-Dev runs:  pytest -v                       ← all tests including integration
+PENDING → RUNNING → COMPLETED
+                 ↘ FAILED
 ```
 
 ---
 
-## 10. Phase milestones & architecture changes per phase
+## 6. Configuration loading order
 
-| Phase | Key architecture change | New files |
+```
+1. configs/config.yaml.example    ← committed, safe template
+2. configs/config.yaml            ← local override, git-ignored
+3. configs/.env                   ← secrets, git-ignored
+4. OS environment variables       ← highest priority, overrides everything
+
+ConfigManager.get("env.WEATHER_API_KEY")
+  → reads WEATHER_API_KEY from .env / OS env
+  → never stored in config.yaml
+
+ConfigManager.get_required("env.WEATHER_API_KEY")
+  → raises ConfigError immediately if missing
+  → called from validate_startup() at boot
+```
+
+---
+
+## 7. CI pipeline
+
+```
+Every push / PR to master:
+
+  static-analysis          (~30s)
+    ruff check + format
+    (mypy — enable later)
+
+  security                 (~45s)
+    bandit -ll --skip B101
+    pip-audit (documented ignores in .pip-audit.toml)
+
+  unit-tests               (~60s, Python 3.11 + 3.12)
+    pytest tests/unit/
+    --cov-fail-under=60
+    OLLAMA_HOST="" WEATHER_API_KEY="" ANTHROPIC_API_KEY=""
+
+  integration-tests        (~3 min, owner repo + push only)
+    install + start Ollama (30s readiness loop)
+    verify model loaded
+    pytest tests/integration/ -m integration --no-cov
+
+Every Monday 9am UTC:
+  security.yml
+    pip-audit CVE scan → artifact
+    gitleaks secret scan (full history)
+```
+
+---
+
+## 8. Known bugs (fix before Phase 4)
+
+| Bug | File | Symptom | Fix |
+|---|---|---|---|
+| `health_check()` references `self.tool_registry` | `agent_manager.py` | AttributeError at runtime | Change to `self.container.tool_registry` |
+| `route_task()` calls global `route_message()` | `router.py` | Bypasses instance config | Change to `self.route_message(task.description)` |
+| Module-level `route_task(self, task)` free function | `router.py` | Invalid Python (`self` param) | Delete the module-level duplicate |
+| Duplicate `BaseMemory` ABC | `conversation_memory.py` | Two sources of truth | Import from `base_memory.py` instead |
+| `context.memory` never populated | `orchestrator.py` | Memory layer constructed but unused | Wire `InProcessMemory.get_history()` into context |
+| `pyproject.toml` coverage gate = 10% | `pyproject.toml` | Local pytest gives false confidence | Change to `--cov-fail-under=60` |
+
+---
+
+## 9. Roadmap
+
+| Phase | Focus | Status |
 |---|---|---|
-| 1 (now) | Provider abstraction · CI · installable | `base_provider.py`, `claude_provider.py`, `provider_factory.py`, `ci.yml` |
-| 2 | Tool registry · BaseTool auto-discovery | `base_tool.py`, `calculator_tool.py`, `tool_registry.py` |
-| 3 | Memory layer | `conversation_memory.py`, `chroma_memory.py` |
-| 4 | Orchestrator | `orchestrator.py`, `finance_agent.py`, `music_agent.py` |
-| 5 | Observability & guardrails | `tracing.py`, `guardrails.py`, `evals/` |
-
----
-
-## Architecture Decision Records
-
-See `docs/ADR/` for decisions and their rationale:
-
-- `ADR-001-provider-abstraction.md` — why ABC over protocol
-- `ADR-002-ollama-first.md` — local-first LLM strategy
-- `ADR-003-chromadb-for-memory.md` — why ChromaDB over Pinecone for Phase 3
-- `ADR-004-no-langchain-orchestrator.md` — why we own orchestration
+| 1 | Provider abstraction, CI, BaseAgent | ✅ Done |
+| 2 | ToolRegistry, BaseMemory, observability | ✅ Done |
+| 3 | Orchestrator scaffold, ReACTLoop, TaskGraph | ✅ Done (scaffold) |
+| 3b | Fix known bugs, wire memory, LLM planner | 🔄 Now |
+| 4 | FinanceAgent, CalculatorTool, LLM synthesis, home finance app | 📋 Next |
+| 5 | OTel tracing, guardrails, eval framework, HTTP health endpoint | 📋 Future |

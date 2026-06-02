@@ -48,7 +48,7 @@ class ExecutionContext:
 
     goal: str
 
-    memory: list[str] = field(default_factory=list)
+    memory: list[dict[str, Any]] = field(default_factory=list)
 
     completed_tasks: dict[str, Any] = field(default_factory=dict)
 

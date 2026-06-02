@@ -63,21 +63,6 @@ class WeatherAgent(BaseAgent):
 
         logger.info("WeatherAgent initialized successfully")
 
-    async def handle(self, task: str, context: dict | None = None) -> dict:
-        """
-        Main router entrypoint.
-        """
-        try:
-            city = self.extract_city(task.description)
-            return await self.get_weather_summary(city)
-
-        except WeatherAgentExecutionError:
-            raise
-
-        except Exception as e:
-            logger.exception("WeatherAgent handle() failed")
-            raise WeatherAgentExecutionError(str(e)) from e
-
     # ------------------------------------------------------------------
     # Domain logic
     # ------------------------------------------------------------------

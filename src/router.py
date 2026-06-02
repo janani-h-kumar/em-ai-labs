@@ -65,7 +65,7 @@ class MessageRouter:
         }
 
         self.regex_patterns = {
-            "weather_agent": [
+            "weather_client": [
                 (
                     re.compile(
                         r"weather (?:in|for|at) ([a-zA-Z\s]+)",
@@ -122,7 +122,7 @@ class MessageRouter:
             )
             return "general", 0.0
 
-        best_agent = max(scores, key=scores.get)
+        best_agent = max(scores, key=lambda scores: len(scores))
         confidence = min(scores[best_agent] / 20.0, 1.0)
 
         logger.debug(
@@ -201,36 +201,11 @@ class MessageRouter:
         }
 
     def route_task(self, task):
-        return route_message(task.description)
+        return self.route_message(task.description)
 
 
 # Global singleton router instance
 _router = MessageRouter()
-
-
-def route_message(message: str) -> str:
-    """
-    Backward-compatible routing helper.
-
-    Args:
-        message: User message
-
-    Returns:
-        str: Selected agent name
-    """
-    agent, _ = _router.route_message(message)
-    return agent
-
-
-def get_router() -> MessageRouter:
-    """
-    Return global router instance.
-    """
-    return _router
-
-
-def route_task(self, task):
-    return route_message(task.description)
 
 
 class Router(MessageRouter):

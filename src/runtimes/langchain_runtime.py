@@ -58,6 +58,7 @@ class LangChainRuntimeExecutionError(LangChainRuntimeError):
 
 class LangChainRuntime(BaseRuntime):
     INVOKE_TIMEOUT_SECONDS = 120
+    agent_executor: RunnableWithMessageHistory | None = None
 
     def __init__(
         self,
@@ -208,7 +209,7 @@ class LangChainRuntime(BaseRuntime):
                 model=ollama_model,
             )
 
-            return response
+            return str(response)
 
         except Exception as e:
             # FIXED G004: Converted to lazy formatting
@@ -257,6 +258,6 @@ class LangChainRuntime(BaseRuntime):
             "runtime": self.name,
             "status": "healthy" if ollama_status == "up" else "degraded",
             "ollama": ollama_status,
-            "active_sessions": len(self.conversational_memory),
+            # "active_sessions": len(self.conversational_memory.list_sessions),
             "agent_executor_initialized": self.agent_executor is not None,
         }

@@ -13,16 +13,22 @@ Changes from original:
 """
 
 import logging
+from typing import Any, TypedDict, cast
 
 import requests
 from openai import OpenAI
 
-from src.providers.base_provider import BaseLLMProvider
+from src.providers.base_provider import BaseLLMProvider, HealthStatus
 
-# FIX: Removed logging.basicConfig(level=logging.INFO) — it overrides
-# the StructuredFormatter set up in logging_utils.py and breaks JSON log
-# aggregation in production (Datadog, CloudWatch, etc.).
 logger = logging.getLogger(__name__)
+
+
+class ModelEntry(TypedDict):
+    name: str
+
+
+class PsResponse(TypedDict, total=False):
+    models: list[ModelEntry]
 
 
 # ---------------------------------------------------------------------------
@@ -134,6 +140,34 @@ class OllamaClient(BaseLLMProvider):
                 f"Ollama server at {self.base_url} did not respond within 5s."
             ) from e
 
+    def _auto_select_model(self) -> str | None:
+        """Return the first running model, or first available model."""
+        try:
+            for endpoint in ("/api/ps", "/api/tags"):
+                resp = requests.get(
+                    f"{self.base_url.replace('/v1', '')}{endpoint}",
+                    timeout=5,
+                )
+                resp.raise_for_status()
+
+                data = cast(dict, resp.json())
+                models_raw = data.get("models", [])
+
+                # explicit narrowing
+                models: list[str] = []
+
+                for m in models_raw:
+                    if isinstance(m, dict) and "name" in m:
+                        models.append(str(m["name"]))
+
+                if models:
+                    return models[0]
+
+        except requests.RequestException:
+            pass
+
+        return None
+
     def _validate_model_exists(self) -> None:
         """Check the configured model is available; auto-select if unset."""
         try:
@@ -170,32 +204,20 @@ class OllamaClient(BaseLLMProvider):
         except requests.RequestException as e:
             raise OllamaConnectionError(f"Error checking model availability: {e}") from e
 
-    def _auto_select_model(self) -> str | None:
-        """Return the first running model, or first available model."""
-        try:
-            for endpoint in ("/api/ps", "/api/tags"):
-                resp = requests.get(
-                    f"{self.base_url.replace('/v1', '')}{endpoint}",
-                    timeout=5,
-                )
-                resp.raise_for_status()
-                models = [m["name"] for m in resp.json().get("models", [])]
-                if models:
-                    return models[0]
-        except requests.RequestException:
-            pass
-        return None
-
     # -----------------------------------------------------------------------
     # Public API
     # -----------------------------------------------------------------------
 
-    def chat_completion(self, content: str | dict | list[dict]) -> str:
+    def chat_completion(
+        self,
+        messages: str | list[dict[Any, Any]],
+        system_prompt: str | None = None,
+    ) -> str:
         """
         Send a message to the model and return its response.
 
         Args:
-            content: str (simple prompt), dict (single message), or
+            messages: str (simple prompt), dict (single message), or
                      list of message dicts (multi-turn conversation)
 
         Returns:
@@ -205,15 +227,15 @@ class OllamaClient(BaseLLMProvider):
             OllamaError: On API failure
         """
         try:
-            if isinstance(content, str):
-                messages = [{"role": "user", "content": content}]
-            elif isinstance(content, dict):
-                messages = [content]
-            elif isinstance(content, list):
-                messages = content
+            if isinstance(messages, str):
+                messages = [{"role": "user", "content": messages}]
+            elif isinstance(messages, dict):
+                messages = [messages]
+            elif isinstance(messages, list):
+                messages = messages
             else:
                 raise OllamaError(
-                    f"Invalid content type {type(content)}. Expected str, dict, or list."
+                    f"Invalid messages type {type(messages)}. Expected str, dict, or list."
                 )
 
             logger.info("Sending %s message(s) to model: %s", len(messages), self.model)
@@ -221,7 +243,7 @@ class OllamaClient(BaseLLMProvider):
                 model=self.model,
                 messages=messages,
             )
-            result = response.choices[0].message.content
+            result = str(response.choices[0].message.content)
             logger.info("Successfully received response from model")
             return result
 
@@ -230,7 +252,7 @@ class OllamaClient(BaseLLMProvider):
         except Exception as e:
             raise OllamaError(f"Error calling model '{self.model}': {e}") from e
 
-    def health_check(self) -> dict:
+    def health_check(self) -> HealthStatus:
         """Checks if the local Ollama instance is reachable."""
         try:
             import requests
@@ -240,18 +262,14 @@ class OllamaClient(BaseLLMProvider):
                 timeout=2,
             )
 
-            return {
-                "status": "healthy" if response.status_code == 200 else "degraded",
-                "provider": "OllamaClient",
-                "status_code": response.status_code,
-            }
+            return HealthStatus(
+                status="healthy" if response.status_code == 200 else "degraded",
+                provider="OllamaClient",
+                status_code=response.status_code,
+            )
 
         except Exception as e:
-            return {
-                "status": "degraded",
-                "error": str(e),
-                "provider": "OllamaClient",
-            }
+            return HealthStatus(status="degraded", provider="OllamaClient", error=str(e))
 
 
 Client = OllamaClient

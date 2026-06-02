@@ -1,6 +1,6 @@
 import anthropic
 
-from src.providers.base_provider import BaseLLMProvider
+from src.providers.base_provider import BaseLLMProvider, HealthStatus
 
 
 class ClaudeProvider(BaseLLMProvider):
@@ -25,13 +25,13 @@ class ClaudeProvider(BaseLLMProvider):
         response = self._client.messages.create(**kwargs)
         return response.content[0].text
 
-    def health_check(self) -> bool:
+    def health_check(self) -> HealthStatus:
         try:
             self.chat_completion("ping")
-            return True
-        except Exception:
-            return False
+            return HealthStatus(status="healthy", provider="ClaudeProvider")
+        except Exception as e:
+            return HealthStatus(status="degraded", provider="ClaudeProvider", error=str(e))
 
     @property
-    def model_name(self) -> str:
+    def model_name(self):
         return self._model

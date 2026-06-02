@@ -1,4 +1,13 @@
 from abc import ABC, abstractmethod
+from dataclasses import dataclass
+
+
+@dataclass
+class HealthStatus:
+    status: str  # "healthy" | "degraded" | "down"
+    provider: str
+    status_code: int | None = None
+    error: str | None = None
 
 
 class BaseLLMProvider(ABC):
@@ -27,12 +36,12 @@ class BaseLLMProvider(ABC):
         ...
 
     @abstractmethod
-    def health_check(self) -> bool:
-        """Return True if the provider is reachable and a model is available."""
+    def health_check(self) -> HealthStatus:
+        """Return the health status of the provider."""
         ...
 
     @property
     @abstractmethod
-    def model_name(self) -> str:
+    def model_name(self):
         """The name of the currently active model."""
         ...

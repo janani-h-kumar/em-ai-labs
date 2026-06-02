@@ -6,6 +6,7 @@ complementing the weather tool for comprehensive information retrieval.
 """
 
 import logging
+from collections.abc import Mapping
 from dataclasses import dataclass
 
 import requests
@@ -70,6 +71,11 @@ class WebSearchClient:
         # Clamp num_results to valid range
         num_results = min(max(num_results, 1), 10)
 
+        params: Mapping[str, str | int | float | None] = {
+            "q": query,
+            "limit": num_results,
+        }
+
         try:
             params = {
                 "q": query,
@@ -79,7 +85,6 @@ class WebSearchClient:
                 "t": "em-ai-labs",  # User agent
             }
 
-            # FIXED G004: Swapped out f-string for standard log parameterization
             logger.debug("Searching: %s", query)
             response = requests.get(self.base_url, params=params, timeout=self.timeout)
             response.raise_for_status()

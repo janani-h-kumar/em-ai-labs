@@ -39,6 +39,7 @@
 
 import logging
 from pathlib import Path
+from typing import Any, cast
 
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
@@ -281,7 +282,9 @@ class SheetsClient:
                 )
                 .execute()
             )
-            return result.get("values", [])
+            values = result.get_all_values()
+            return cast(list[list[Any]], values)
+
         except HttpError:
             # FIXED G201 / G004: Swapped manual error logging out for native exception capture tracking
             logger.exception("Could not read tab '%s'", tab_name)

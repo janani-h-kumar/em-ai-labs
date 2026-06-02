@@ -6,7 +6,7 @@ runtime (LangChain, custom, etc.) based on configuration settings.
 """
 
 import logging
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 from src.runtimes.base_runtime import BaseRuntime
 from src.runtimes.langchain_runtime import LangChainRuntime
@@ -57,7 +57,7 @@ class RuntimeFactory:
                 tools=tool_list
             )
         """
-        runtime_type = runtime_type.lower().strip()
+        runtime_type = cast(RuntimeType, runtime_type.lower().strip())
 
         if runtime_type == "langchain":
             logger.info("Creating LangChainRuntime...")

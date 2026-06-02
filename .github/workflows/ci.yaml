@@ -43,8 +43,8 @@ jobs:
         run: uv run ruff format src/ tests/ --check
 
       # Enable later after type coverage improves
-      # - name: Mypy type check
-      #   run: uv run mypy src/ --ignore-missing-imports --strict-optional
+      - name: Mypy type check
+        run: uv run mypy src/ --ignore-missing-imports --strict-optional
 
   # ──────────────────────────────────────────────
   # JOB 2: Security scan

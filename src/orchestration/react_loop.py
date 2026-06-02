@@ -4,6 +4,8 @@ ReACT orchestration loop.
 
 import logging
 
+from src.orchestration.task_graph import TaskGraph
+
 logger = logging.getLogger(__name__)
 
 
@@ -24,6 +26,7 @@ class ReACTLoop:
 
     async def run(
         self,
+        provider,
         goal,
         context,
         max_iterations: int = 5,
@@ -31,40 +34,24 @@ class ReACTLoop:
         """
         Execute iterative reasoning loop.
         """
-
-        logger.info(
-            "Starting ReACT loop",
-            extra={
-                "extra_data": {
-                    "goal": goal,
-                    "session_id": context.session_id,
-                }
-            },
-        )
-
-        iteration = 0
-
+        tasks = await self.planner.create_plan(provider, goal, context)
+        graph = TaskGraph(tasks)
         final_results = []
 
-        while iteration < max_iterations:
-            tasks = await self.planner.create_plan(
-                goal,
-                context,
-            )
-
-            if not tasks:
+        while not graph.all_completed() and (iteration := 0) < max_iterations:
+            ready = graph.get_ready_tasks()
+            if not ready:
                 break
 
-            for task in tasks:
-                result = await self.executor.execute_task(
-                    task,
-                    context,
-                )
+            if len(ready) == 1:
+                result = await self.executor.execute_task(ready[0], context)
+                graph.mark_completed(ready[0].id, result)
+            else:
+                results = await self.executor.execute_parallel(ready, context)
+                for task, result in zip(ready, results):
+                    graph.mark_completed(task.id, result)
 
-                final_results.append(result)
-
-            # Initial implementation:
-            # stop after first successful execution cycle
-            break
+            final_results.extend([t.result for t in ready])
+            iteration += 1
 
         return final_results

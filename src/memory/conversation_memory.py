@@ -1,16 +1,9 @@
 # src/memory/conversation_memory.py
 
-from abc import ABC, abstractmethod
 
 from langchain_core.chat_history import InMemoryChatMessageHistory
 
-
-class BaseMemory(ABC):
-    @abstractmethod
-    def get_history(self, session_id: str) -> InMemoryChatMessageHistory: ...
-
-    @abstractmethod
-    def clear(self, session_id: str) -> None: ...
+from src.memory.base_memory import BaseMemory
 
 
 class InProcessMemory(BaseMemory):

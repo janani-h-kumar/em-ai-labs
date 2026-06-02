@@ -2,10 +2,12 @@
 Task planner for goal decomposition.
 """
 
+import json
 import logging
 from uuid import uuid4
 
 from src.orchestration.models import ExecutionContext, Task
+from src.providers.base_provider import BaseLLMProvider
 
 logger = logging.getLogger(__name__)
 
@@ -16,31 +18,25 @@ class Planner:
     """
 
     async def create_plan(
-        self,
-        goal: str,
-        context: ExecutionContext,
+        self, provider: BaseLLMProvider, goal: str, context: ExecutionContext
     ) -> list[Task]:
+        prompt = f"""
+        Break the following goal into 1-3 discrete tasks.
+        Each task should be assignable to a single agent.
+        Available agents: weather_agent
+        Respond as JSON: [{{"description": "...", "agent": "...", "parallelizable": false}}]
+
+        Goal: {goal}
         """
-        Create an execution plan from a goal.
-
-        Initial implementation:
-        - simple single-task plan
-        - later evolves into LLM-based decomposition
-        """
-
-        logger.info(
-            "Creating execution plan",
-            extra={
-                "extra_data": {
-                    "session_id": context.session_id,
-                    "goal": goal,
-                }
-            },
-        )
-
-        task = Task(
-            id=str(uuid4()),
-            description=goal,
-        )
-
-        return [task]
+        self.provider = provider
+        raw = self.provider.chat_completion(prompt)
+        steps = json.loads(raw)
+        return [
+            Task(
+                id=str(uuid4()),
+                description=s["description"],
+                assigned_agent=s.get("agent"),
+                parallelizable=s.get("parallelizable", False),
+            )
+            for s in steps
+        ]

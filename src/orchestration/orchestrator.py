@@ -18,14 +18,10 @@ class Orchestrator:
     Coordinates planning, execution, and synthesis.
     """
 
-    def __init__(
-        self,
-        agent_registry,
-        router,
-    ):
+    def __init__(self, agent_registry, router, provider):
         self.agent_registry = agent_registry
         self.router = router
-
+        self.provider = provider
         self.memory = InProcessMemory()
 
         self.planner = Planner()
@@ -48,7 +44,6 @@ class Orchestrator:
         """
         Execute orchestration lifecycle.
         """
-
         logger.info(
             "Starting orchestration",
             extra={
@@ -59,7 +54,11 @@ class Orchestrator:
             },
         )
 
-        memory_context = []
+        history = self.memory.get_history(session_id)
+        memory_context = [
+            {"role": m.type, "content": m.content}
+            for m in history.messages[-6:]  # last 3 turns for context window
+        ]
 
         context = ExecutionContext(
             session_id=session_id,
@@ -68,16 +67,19 @@ class Orchestrator:
         )
 
         results = await self.react_loop.run(
+            provider=self.provider,
             goal=goal,
             context=context,
         )
 
-        final_response = self.synthesize(
+        # Store the exchange
+        history.add_user_message(goal)
+        history.add_ai_message(results[0] if results else "")
+
+        return self.synthesize(
             goal,
             results,
         )
-
-        return final_response
 
     def synthesize(
         self,
