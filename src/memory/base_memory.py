@@ -1,4 +1,4 @@
-# src/memory/conversation_memory.py
+# src/memory/base_memory.py
 
 from abc import ABC, abstractmethod
 

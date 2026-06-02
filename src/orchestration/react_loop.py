@@ -38,7 +38,8 @@ class ReACTLoop:
         graph = TaskGraph(tasks)
         final_results = []
 
-        while not graph.all_completed() and (iteration := 0) < max_iterations:
+        iteration = 0
+        while not graph.all_completed() and iteration < max_iterations:
             ready = graph.get_ready_tasks()
             if not ready:
                 break
@@ -48,7 +49,7 @@ class ReACTLoop:
                 graph.mark_completed(ready[0].id, result)
             else:
                 results = await self.executor.execute_parallel(ready, context)
-                for task, result in zip(ready, results):
+                for task, result in zip(ready, results, strict=True):
                     graph.mark_completed(task.id, result)
 
             final_results.extend([t.result for t in ready])

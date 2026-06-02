@@ -16,7 +16,6 @@ from typing import Any
 from src.agents.agent_registry import AgentRegistry
 from src.core.container import ServiceContainer
 from src.orchestration.orchestrator import Orchestrator
-from src.providers.provider_factory import ProviderFactory
 from src.router import MessageRouter
 from src.utils.config_loader import ConfigManager
 from src.utils.logging_utils import (
@@ -75,7 +74,7 @@ class AgentManager:
             self.orchestrator = Orchestrator(
                 agent_registry=self.agent_registry,
                 router=self.router,
-                provider=ProviderFactory.get_provider("ollama"),
+                provider=self.container.provider,
             )
 
             logger.info("AgentManager initialised successfully")

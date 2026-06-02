@@ -2,12 +2,19 @@
 Task planner for goal decomposition.
 """
 
-import json
 import logging
+from typing import TypedDict
 from uuid import uuid4
 
 from src.orchestration.models import ExecutionContext, Task
 from src.providers.base_provider import BaseLLMProvider
+
+
+class PlanStep(TypedDict):
+    description: str
+    agent: str
+    parallelizable: bool
+
 
 logger = logging.getLogger(__name__)
 
@@ -20,7 +27,8 @@ class Planner:
     async def create_plan(
         self, provider: BaseLLMProvider, goal: str, context: ExecutionContext
     ) -> list[Task]:
-        prompt = f"""
+        """
+        # prompt = f
         Break the following goal into 1-3 discrete tasks.
         Each task should be assignable to a single agent.
         Available agents: weather_agent
@@ -28,9 +36,16 @@ class Planner:
 
         Goal: {goal}
         """
+
+        """ TODO revisit later 
         self.provider = provider
         raw = self.provider.chat_completion(prompt)
         steps = json.loads(raw)
+        """
+        steps: list[PlanStep] = [
+            {"description": goal, "agent": "weather_agent", "parallelizable": False}
+        ]
+
         return [
             Task(
                 id=str(uuid4()),

@@ -9,6 +9,7 @@ from src.orchestration.executor import Executor
 from src.orchestration.models import ExecutionContext
 from src.orchestration.planner import Planner
 from src.orchestration.react_loop import ReACTLoop
+from src.providers.base_provider import BaseLLMProvider
 
 logger = logging.getLogger(__name__)
 
@@ -18,10 +19,10 @@ class Orchestrator:
     Coordinates planning, execution, and synthesis.
     """
 
-    def __init__(self, agent_registry, router, provider):
+    def __init__(self, agent_registry, router, provider: BaseLLMProvider):
         self.agent_registry = agent_registry
         self.router = router
-        self.provider = provider
+        self.provider: BaseLLMProvider = provider
         self.memory = InProcessMemory()
 
         self.planner = Planner()
@@ -81,16 +82,15 @@ class Orchestrator:
             results,
         )
 
-    def synthesize(
-        self,
-        goal: str,
-        results: list,
-    ) -> str:
-        """
-        Combine execution outputs into final response.
-        """
-
+    def synthesize(self, goal: str, results: list) -> str:
         if not results:
             return "No result generated."
-
-        return "\n".join(str(result) for result in results)
+        if len(results) == 1:
+            return str(results[0])
+        context_block = "\n\n".join(f"Result {i + 1}:\n{r}" for i, r in enumerate(results))
+        prompt = (
+            f"Original goal: {goal}\n\n"
+            f"Agent results:\n{context_block}\n\n"
+            "Synthesise into one coherent, conversational response."
+        )
+        return self.provider.chat_completion(prompt)

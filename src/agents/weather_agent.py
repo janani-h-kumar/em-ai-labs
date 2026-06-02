@@ -117,7 +117,7 @@ class WeatherAgent(BaseAgent):
 
             summary = self.base_llm_provider.chat_completion(prompt)
 
-            return str(summary)
+            return summary
 
         except CityNotFoundError as e:
             raise WeatherAgentExecutionError(f"City not found: {city}") from e
@@ -125,3 +125,7 @@ class WeatherAgent(BaseAgent):
         except Exception as e:
             logger.exception("Failed getting weather summary")
             raise WeatherAgentExecutionError(str(e)) from e
+
+    async def handle(self, task, context):
+        query = task.description or ""
+        return await self.get_weather_summary(self.extract_city(query))

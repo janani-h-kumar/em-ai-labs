@@ -1,14 +1,13 @@
-# src/apps/health_server.py
 from fastapi import FastAPI
 
+from src.agent_manager import AgentManager
+
 app = FastAPI()
+manager = AgentManager()
+
+manager = AgentManager()
 
 
 @app.get("/health")
 async def health():
     return await manager.health_check()
-
-
-@app.get("/ready")
-async def ready():
-    return {"ready": manager.is_initialized()}

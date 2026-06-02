@@ -279,7 +279,7 @@ Every Monday 9am UTC:
 | Module-level `route_task(self, task)` free function | `router.py` | Invalid Python (`self` param) | Delete the module-level duplicate |
 | Duplicate `BaseMemory` ABC | `conversation_memory.py` | Two sources of truth | Import from `base_memory.py` instead |
 | `context.memory` never populated | `orchestrator.py` | Memory layer constructed but unused | Wire `InProcessMemory.get_history()` into context |
-| `pyproject.toml` coverage gate = 10% | `pyproject.toml` | Local pytest gives false confidence | Change to `--cov-fail-under=60` |
+| `pyproject.toml` coverage gate = 60% | `pyproject.toml` | Local pytest gives false confidence | Change to `--cov-fail-under=60` |
 
 ---
 

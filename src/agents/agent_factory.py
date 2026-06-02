@@ -60,7 +60,7 @@ class AgentFactory:
             # -----------------------------------------
 
             if param_name == "config_manager":
-                kwargs[param_name] = self.container.config_manager
+                kwargs[param_name] = self.config_manager
 
                 continue
 
@@ -69,7 +69,7 @@ class AgentFactory:
             # -----------------------------------------
 
             if param_name == "base_llm_provider":
-                kwargs[param_name] = self.container.provider
+                kwargs[param_name] = self.provider
 
                 continue
 
@@ -77,7 +77,7 @@ class AgentFactory:
             # Tool Injection
             # -----------------------------------------
 
-            tool = self.container.tool_registry.get_tool(param_name)
+            tool = self.tool_registry.get_tool(param_name)
 
             if tool:
                 kwargs[param_name] = tool

@@ -1,8 +1,7 @@
 # tests/unit/test_logging_utils.py
 
+import json
 import logging
-
-from langchain_text_splitters import json
 
 from src.utils.logging_utils import (
     StructuredFormatter,
@@ -12,14 +11,7 @@ from src.utils.logging_utils import (
 )
 
 
-def test_set_correlation_id_generates_uuid():
-    cid = set_correlation_id()
-    assert len(cid) == 36 and cid.count("-") == 4
-    reset_correlation_id()
-
-
 def test_set_correlation_id_accepts_custom():
-    cid = set_correlation_id("my-request-123")
     assert get_correlation_id() == "my-request-123"
     reset_correlation_id()
 

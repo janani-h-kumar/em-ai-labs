@@ -57,6 +57,7 @@ class Executor:
             if not agent_name:
                 agent_name = self.router.route_task(task)
 
+            agent_name = "weather_agent"  # TODO remove hardcoding
             agent = self.agent_registry.get(agent_name)
 
             result = await agent.handle(

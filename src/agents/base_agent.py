@@ -133,7 +133,6 @@ class BaseAgent(ABC):
         task,
         context,
     ):
-        pass
         """
         Process a user message and return a response string.
 
@@ -155,6 +154,7 @@ class BaseAgent(ABC):
                 except WeatherAgentExecutionError as e:
                     return f"Sorry, I couldn't get the weather: {e}"
         """
+        pass
 
     # -----------------------------------------------------------------------
     # Concrete helpers — available to all subclasses

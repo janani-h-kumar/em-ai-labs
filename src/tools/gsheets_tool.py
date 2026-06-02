@@ -332,7 +332,7 @@ class SheetsClient:
     def _row_to_dict(self, header: list, row: list) -> dict:
         """Zip a header row and a data row into a dict. Pads short rows with empty strings."""
         padded = row + [""] * (len(header) - len(row))
-        return dict(zip(header, padded, strict=False))
+        return dict(zip(header, padded, strict=True))
 
     # --------------------------------------------------------
     # INTERNAL — OAuth2 authentication

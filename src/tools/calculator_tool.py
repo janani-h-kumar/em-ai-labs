@@ -1,11 +1,21 @@
 # src/tools/calculator_tool.py
 
+from pydantic import BaseModel
+
 from src.tools.base_tool import BaseTool
+
+
+class CalculatorInput(BaseModel):
+    operation: str
+    principal: float | None = None
+    annual_rate_pct: float | None = None
+    term_months: int | None = None
 
 
 class CalculatorTool(BaseTool):
     name = "calculator"
     description = "Mortgage and home finance calculations"
+    args_schema = CalculatorInput
 
     def amortise(self, principal: float, annual_rate_pct: float, term_months: int) -> dict:
         """Returns monthly_payment, total_paid, total_interest."""
@@ -44,3 +54,7 @@ class CalculatorTool(BaseTool):
             "assumed_rate_pct": rate_pct,
             "term_years": term_years,
         }
+
+    def _run(self, input: str, **kwargs):
+        # Route to specific method based on input
+        raise NotImplementedError("Use amortise(), dti_ratio(), or affordability_range() directly")

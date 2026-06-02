@@ -65,7 +65,7 @@ class MessageRouter:
         }
 
         self.regex_patterns = {
-            "weather_client": [
+            "weather_agent": [
                 (
                     re.compile(
                         r"weather (?:in|for|at) ([a-zA-Z\s]+)",
@@ -122,7 +122,7 @@ class MessageRouter:
             )
             return "general", 0.0
 
-        best_agent = max(scores, key=lambda scores: len(scores))
+        best_agent = max(scores, key=lambda agent: scores[agent])
         confidence = min(scores[best_agent] / 20.0, 1.0)
 
         logger.debug(

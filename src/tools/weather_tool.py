@@ -4,7 +4,7 @@ Integrated with BaseTool architectural pattern.
 """
 
 import logging
-from dataclasses import dataclass
+from typing import cast
 
 import requests
 from pydantic import BaseModel, Field
@@ -23,7 +23,6 @@ class WeatherInput(BaseModel):
     )
 
 
-@dataclass
 class WeatherResult(BaseModel):
     city: str
     country: str
@@ -98,8 +97,8 @@ class WeatherClient:
     def get_temperature(self, city: str, units: str = "imperial") -> WeatherResult:
         if not city or not isinstance(city, str) or not city.strip():
             raise ValueError("City name must be a non-empty string")
-        result = WeatherResult, self._circuit_breaker.call(self._fetch_weather, city.strip(), units)
-        return WeatherResult.model_validate(result)
+        result = self._circuit_breaker.call(self._fetch_weather, city.strip(), units)
+        return cast(WeatherResult, result)
 
     def _fetch_weather(self, city: str, units: str) -> WeatherResult:
         try:
