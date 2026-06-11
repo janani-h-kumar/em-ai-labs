@@ -255,7 +255,6 @@ Every push / PR to master:
   unit-tests               (~60s, Python 3.11 + 3.12)
     pytest tests/unit/
     --cov-fail-under=60
-    OLLAMA_HOST="" WEATHER_API_KEY="" ANTHROPIC_API_KEY=""
 
   integration-tests        (~3 min, owner repo + push only)
     install + start Ollama (30s readiness loop)
