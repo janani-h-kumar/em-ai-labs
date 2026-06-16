@@ -18,59 +18,44 @@ class ToolRegistry:
 
     def __init__(self, config_manager: ConfigManager):
         self.config_manager = config_manager
-
         self._tool_instances: dict[str, BaseTool] = {}
 
     def discover_tools(self) -> None:
         """
         Scan src.tools package for BaseTool subclasses.
         """
-
         import src.tools
 
         for _, module_name, _ in pkgutil.iter_modules(src.tools.__path__):
-            # Skip internal framework modules
-            if module_name in {
-                "base_tool",
-                "tool_registry",
-            }:
+            if module_name in {"base_tool", "tool_registry"}:
                 continue
 
             module_path = f"src.tools.{module_name}"
 
             try:
                 module = importlib.import_module(module_path)
-
             except Exception:
-                logger.exception(
-                    "Failed importing module '%s'",
-                    module_path,
-                )
+                logger.exception("Failed importing module '%s'", module_path)
                 continue
 
-            for _, obj in inspect.getmembers(
-                module,
-                inspect.isclass,
-            ):
+            for _, obj in inspect.getmembers(module, inspect.isclass):
                 if issubclass(obj, BaseTool) and obj is not BaseTool:
                     try:
                         instance = obj(self.config_manager)
-
                         self._tool_instances[instance.name] = instance
-
-                        logger.info(
-                            "Registered tool '%s'",
-                            instance.name,
-                        )
-
+                        logger.info("Registered tool '%s'", instance.name)
                     except Exception:
-                        logger.exception(
-                            "Failed initializing tool '%s'",
-                            obj.__name__,
-                        )
+                        logger.exception("Failed initializing tool '%s'", obj.__name__)
 
-    def get_tool(self, name: str) -> BaseTool:
-        return self._tool_instances[name]
+    def get_tool(self, name: str) -> BaseTool | None:
+        """
+        Return a tool by name, or None if not registered.
+
+        FIX: was returning BaseTool (raising KeyError on miss). AgentFactory calls
+        this for every constructor param and checks the return value — None signals
+        'not a tool', KeyError was an unhandled crash that buried the real error.
+        """
+        return self._tool_instances.get(name)
 
     def get_all_tools(self) -> list[BaseTool]:
         return list(self._tool_instances.values())

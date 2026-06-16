@@ -1,4 +1,4 @@
-# tests/unit/test_logging_utils.py
+# tests/observability/test_logging_utils.py
 
 import json
 import logging
@@ -12,6 +12,7 @@ from src.utils.logging_utils import (
 
 
 def test_set_correlation_id_accepts_custom():
+    set_correlation_id("my-request-123")  # FIX: was missing this setup line
     assert get_correlation_id() == "my-request-123"
     reset_correlation_id()
 
@@ -19,9 +20,7 @@ def test_set_correlation_id_accepts_custom():
 def test_reset_clears_id():
     set_correlation_id("test")
     reset_correlation_id()
-    assert (
-        get_correlation_id() is None
-    )  # requires get_correlation_id() returns None, not auto-generate
+    assert get_correlation_id() is None
 
 
 def test_structured_formatter_valid_json():

@@ -1,6 +1,5 @@
 """
 Enterprise configuration manager — minimally hardened production version.
-
 """
 
 import logging
@@ -34,7 +33,7 @@ class ConfigManager:
 
     - YAML config is primary source
     - .env provides runtime overrides
-    - No silent fallback behavior
+    - OS environment variables always win
     """
 
     config_path: str
@@ -45,19 +44,12 @@ class ConfigManager:
 
     def _load_config(self) -> dict[str, Any]:
         """Load YAML config and environment variables."""
-
         config_file = Path(self.config_path)
         config: dict[str, Any] = {}
 
-        # ----------------------------
-        # 1. FAIL FAST if file missing
-        # ----------------------------
         if not config_file.exists() or not config_file.is_file():
             raise ConfigError(f"Config file not found: {self.config_path}")
 
-        # ----------------------------
-        # 2. Load YAML safely
-        # ----------------------------
         try:
             with open(config_file, encoding="utf-8") as f:
                 config = yaml.safe_load(f) or {}
@@ -67,32 +59,19 @@ class ConfigManager:
         except Exception as e:
             raise ConfigError(f"Failed to load config file: {e}") from e
 
-        # ----------------------------
-        # 3. ENV loading (.env + override)
-        # ----------------------------
         config["env"] = {}
-
         env_root = config_file.parent.parent
-
         base_env_file = env_root / ".env"
-
         app_env = (os.getenv("APP_ENV") or "dev").lower()
-
         env_specific_file = env_root / f".env.{app_env}"
 
-        # 1. Start with base .env (lowest priority)
-        base_env = {}
         if base_env_file.exists():
-            base_env = dotenv_values(dotenv_path=base_env_file)
-            config["env"].update(base_env)
+            config["env"].update(dotenv_values(dotenv_path=base_env_file))
 
-        # 2. Override with env-specific .env.<env>
         if env_specific_file.exists():
             logger.info("Loading environment-specific keys from %s", env_specific_file.name)
-            env_specific = dotenv_values(dotenv_path=env_specific_file)
-            config["env"].update(env_specific)
+            config["env"].update(dotenv_values(dotenv_path=env_specific_file))
 
-        # 3. FINAL OVERRIDE: OS environment wins always
         config["env"].update(dict(os.environ))
 
         logger.info("Configuration loaded successfully")
@@ -120,10 +99,8 @@ class ConfigManager:
     def get_required(self, key: str) -> Any:
         """Get required value or raise ConfigValidationError."""
         value = self.get(key)
-
         if value is None or (isinstance(value, str) and not value.strip()):
             raise ConfigValidationError(f"Missing required config: {key}")
-
         return value
 
     def get_all(self) -> dict[str, Any]:
@@ -137,21 +114,22 @@ class ConfigManager:
     def validate_startup(self) -> None:
         """
         Fail fast validation of required runtime configuration.
-        """
 
+        FIX: Removed env.OLLAMA_API_KEY from required keys.
+        Local Ollama has no auth by default — requiring this key blocked every
+        fresh clone and local dev setup unless a dummy value was set.
+        OLLAMA_BASE_URL is sufficient to verify Ollama is configured.
+        """
         required_keys = [
-            "env.OLLAMA_API_KEY",
-            "env.OLLAMA_BASE_URL",
-            "env.OPENWEATHER_API_KEY",
-            "env.OPENWEATHER_BASE_URL",
-            "runtime.orchestration",
+            "env.OLLAMA_BASE_URL",  # required: where Ollama is running
+            "env.OPENWEATHER_API_KEY",  # required: weather tool
+            "env.OPENWEATHER_BASE_URL",  # required: weather tool base url
+            "runtime.orchestration",  # required: orchestration mode flag
         ]
 
         missing = []
-
         for key in required_keys:
             value = self.get(key)
-
             if value is None:
                 missing.append(key)
             elif isinstance(value, str) and not value.strip():

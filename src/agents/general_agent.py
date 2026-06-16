@@ -4,7 +4,7 @@ General fallback agent for unanswered or unscored requests.
 
 import logging
 
-from src.agents.base_agent import AgentInitError, BaseAgent
+from src.agents.base_agent import AgentExecutionError, AgentInitError, BaseAgent
 from src.providers.base_provider import BaseLLMProvider
 from src.utils.config_loader import ConfigManager
 
@@ -33,10 +33,17 @@ class GeneralAgent(BaseAgent):
         self.system_prompt = (
             "You are a helpful assistant. Respond succinctly and clearly to general user requests."
         )
-
         logger.info("GeneralAgent initialized successfully")
 
-    async def handle(self, task, context):
+    async def handle(self, task, context) -> str:
+        """
+        Handle a fallback task via the LLM provider.
+
+        FIX: Removed bare except that swallowed all failures silently.
+        Raises AgentExecutionError so the orchestrator knows the task failed
+        and can set TaskStatus.FAILED rather than recording a sorry message
+        as a successful result.
+        """
         prompt = task.description
         try:
             response = self.base_llm_provider.chat_completion(
@@ -44,6 +51,8 @@ class GeneralAgent(BaseAgent):
                 system_prompt=self.system_prompt,
             )
             return str(response)
-        except Exception:
-            logger.exception("GeneralAgent failed to generate response")
-            return "Sorry, I couldn't process that request right now."
+        except Exception as e:
+            logger.exception("GeneralAgent failed to generate response task_id=%s", task.id)
+            raise AgentExecutionError(
+                f"GeneralAgent could not process task '{task.id}': {e}"
+            ) from e

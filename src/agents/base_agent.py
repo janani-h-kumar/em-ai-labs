@@ -11,7 +11,7 @@ Design contract:
 
 import logging
 from abc import ABC, abstractmethod
-from datetime import datetime
+from datetime import UTC, datetime  # FIX: import UTC alongside datetime
 from typing import Any
 
 from src.utils.config_loader import ConfigManager
@@ -60,9 +60,9 @@ class BaseAgent(ABC):
                 self.weather_tool = WeatherTool(self.config_manager)
                 self.provider = get_provider(self.config_manager)
 
-            def handle(self, message: str) -> str:
-                city = self.extract_city(message)
-                return self.get_weather_summary(city)
+            async def handle(self, task, context) -> str:
+                city = self.extract_city(task.description)
+                return await self.get_weather_summary(city)
 
     Why config_manager is injected (not a path string):
         Passing a path string forces the base class to know about the
@@ -88,7 +88,6 @@ class BaseAgent(ABC):
         Raises:
             AgentInitError: If initialize() raises for any reason.
         """
-        # Store before initialize() so subclasses can use self.config_manager there
         self.config_manager: ConfigManager = config_manager
         self.logger = logging.getLogger(self.__class__.__name__)
         self._initialized: bool = False
@@ -97,17 +96,14 @@ class BaseAgent(ABC):
             self.initialize()
             self._initialized = True
             self.logger.info("Agent initialised name=%s", self.__class__.__name__)
-            # Basic metadata validation — subclasses should set class attributes
             if not getattr(self, "name", "") or not getattr(self, "capabilities", None):
                 self.logger.warning(
                     "Agent %s missing metadata (name/capabilities).",
                     self.__class__.__name__,
                 )
         except AgentInitError:
-            # Already a typed error — let it propagate as-is
             raise
         except Exception as e:
-            # FIXED G201: Swapped to .exception and removed redundant error=%s + exc_info=True
             self.logger.exception(
                 "Failed to initialise agent name=%s: %s",
                 self.__class__.__name__,
@@ -124,48 +120,25 @@ class BaseAgent(ABC):
         """
         Set up API clients, tools, prompts, and any domain-specific state.
 
-        Called once by __init__. Do NOT call super().initialize() — there
-        is no parent implementation.
-
+        Called once by __init__. Do NOT call super().initialize().
         Raise AgentInitError if a required dependency is unavailable.
-        Do NOT raise generic Exception — the base class wraps anything
-        that isn't already an AgentInitError.
-
-        Example:
-            def initialize(self) -> None:
-                self.weather_tool = WeatherTool(self.config_manager)
-                self.provider = get_provider(self.config_manager)
-                self.system_prompt = "You are a friendly weather assistant."
         """
 
     @abstractmethod
-    async def handle(
-        self,
-        task,
-        context,
-    ):
+    async def handle(self, task: Any, context: Any) -> str:
         """
-        Process a user message and return a response string.
+        Process a task and return a response string.
 
         This is the single entrypoint the router and orchestrator call.
         All domain logic lives here or in private methods called from here.
 
         Args:
-            message: Raw user input string. Never empty (router filters blanks).
+            task: Task dataclass with .description and .id.
+            context: ExecutionContext with .session_id, .goal, .memory.
 
         Returns:
-            Response string. Never None, never raise from this method —
-            catch internally and return a user-facing error string if needed.
-
-        Example:
-            def handle(self, message: str) -> str:
-                try:
-                    city = self.extract_city(message)
-                    return self.get_weather_summary(city)
-                except WeatherAgentExecutionError as e:
-                    return f"Sorry, I couldn't get the weather: {e}"
+            Response string. Never None.
         """
-        pass
 
     # -----------------------------------------------------------------------
     # Concrete helpers — available to all subclasses
@@ -179,15 +152,9 @@ class BaseAgent(ABC):
         """
         Convenience wrapper for config access with dot notation.
 
-        Prefer calling self.config_manager.get() directly in complex cases;
-        this shorthand is for simple one-liners in initialize().
-
         Args:
             key: Dot-notation config key, e.g. 'env.OPENWEATHER_API_KEY'
             default: Value to return if key is absent.
-
-        Returns:
-            Config value or default.
         """
         return self.config_manager.get(key, default)
 
@@ -195,21 +162,11 @@ class BaseAgent(ABC):
         """
         Return a health status dict for monitoring and smoke-testing.
 
-        Subclasses should override this to add domain-specific checks,
-        e.g. pinging the LLM provider or the external API.
-
-        Returns:
-            Dict with at minimum: agent, status, initialized, timestamp.
-
-        Example override:
-            def health_check(self) -> Dict[str, Any]:
-                base = super().health_check()
-                base["provider"] = self.provider.health_check()
-                return base
+        Subclasses should override to add domain-specific checks.
         """
         return {
             "agent": self.__class__.__name__,
             "status": "healthy" if self._initialized else "unhealthy",
             "initialized": self._initialized,
-            "timestamp": datetime.utcnow().isoformat(),
+            "timestamp": datetime.now(UTC).isoformat(),  # FIX: utcnow() deprecated in 3.12
         }

@@ -19,7 +19,7 @@ async def run_interactive_chat():
     print("\n" + "=" * 50)
     print("AI Lab — Agent Orchestration System")
     print("=" * 50)
-    print("Type 'exit' to quit, 'help' for commands\n")
+    print("Type 'exit' to quit, 'health' for status\n")
 
     try:
         startup_start = time.perf_counter()
@@ -45,7 +45,9 @@ async def run_interactive_chat():
                 print("\nCommands: exit/quit, health, or ask a question\n")
                 continue
             if msg.lower() == "health":
-                print(f"\nSystem Health: {manager.health_check()}\n")
+                # FIX: health_check() is async — must be awaited
+                status = await manager.health_check()
+                print(f"\nSystem Health: {status}\n")
                 continue
 
             response = await manager.handle(msg)
