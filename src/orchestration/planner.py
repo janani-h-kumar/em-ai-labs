@@ -31,8 +31,7 @@ class Planner:
         # prompt = f
         Break the following goal into 1-3 discrete tasks.
         Each task should be assignable to a single agent.
-        Available agents: weather_agent
-        Respond as JSON: [{{"description": "...", "agent": "...", "parallelizable": false}}]
+        Respond as JSON: [{"description": "...", "agent": "...", "parallelizable": false}]
 
         Goal: {goal}
         """
@@ -42,9 +41,8 @@ class Planner:
         raw = self.provider.chat_completion(prompt)
         steps = json.loads(raw)
         """
-        steps: list[PlanStep] = [
-            {"description": goal, "agent": "weather_agent", "parallelizable": False}
-        ]
+        # By default do not assign a concrete agent here; leave routing to the Router
+        steps: list[PlanStep] = [{"description": goal, "agent": None, "parallelizable": False}]
 
         return [
             Task(

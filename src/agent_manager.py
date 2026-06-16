@@ -63,7 +63,19 @@ class AgentManager:
             # Router
             # -------------------------------------------------
 
-            self.router = MessageRouter()
+            agent_capabilities = {
+                name: getattr(agent_class, "capabilities", []) or []
+                for name, agent_class in self.agent_registry.agents.items()
+            }
+
+            logger.info(
+                "Building router from agent metadata",
+                extra={"extra_data": {"agent_capabilities": agent_capabilities}},
+            )
+
+            self.router = MessageRouter(
+                agent_capabilities=agent_capabilities,
+            )
 
             # -------------------------------------------------
             # Orchestrator
@@ -164,7 +176,8 @@ async def _main():
 
     manager = AgentManager()
 
-    response = await manager.handle("What is the weather in Seattle?")
+    # Example: handle a generic request — routing decides the appropriate agent.
+    response = await manager.handle("Provide a short summary about today's events.")
 
     print(response)
 

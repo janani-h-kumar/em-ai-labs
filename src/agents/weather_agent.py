@@ -31,13 +31,23 @@ class WeatherAgent(BaseAgent):
     - weather_tool
     """
 
+    # Agent metadata
+    name = "weather_agent"
+    description = "Provides weather information"
+    capabilities = [
+        "weather",
+        "forecast",
+        "temperature",
+        "rain",
+        "snow",
+    ]
+
     def __init__(
         self,
         config_manager: ConfigManager,
         base_llm_provider: BaseLLMProvider,
         weather_tool: WeatherTool,
     ) -> None:
-        self.name = "weather_agent"
         self.base_llm_provider = base_llm_provider
         self.weather_tool = weather_tool
 

@@ -9,14 +9,16 @@ class ClaudeProvider(BaseLLMProvider):
         self._client = anthropic.Anthropic(api_key=config_manager.get("env.anthropic_api_key"))
         self._model = config_manager.get("claude.model", "claude-haiku-4-5-20251001")
 
-    def chat_completion(self, messages, system_prompt=None):
+    def chat_completion(self, messages, system_prompt=None, max_tokens=None):
         # Normalise plain string → list
         if isinstance(messages, str):
             messages = [{"role": "user", "content": messages}]
 
         kwargs = dict(
             model=self._model,
-            max_tokens=self._config.get("claude.max_tokens", 1000),
+            max_tokens=max_tokens
+            if max_tokens is not None
+            else self._config.get("claude.max_tokens", 1000),
             messages=messages,
         )
         if system_prompt:

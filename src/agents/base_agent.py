@@ -71,6 +71,11 @@ class BaseAgent(ABC):
         truth, and trivial testing (just pass a mock).
     """
 
+    # Metadata contract (subclasses should override)
+    name: str = ""
+    description: str = ""
+    capabilities: list[str] | None = None
+
     def __init__(self, config_manager: ConfigManager) -> None:
         """
         Initialise the agent with an already-constructed ConfigManager.
@@ -92,6 +97,12 @@ class BaseAgent(ABC):
             self.initialize()
             self._initialized = True
             self.logger.info("Agent initialised name=%s", self.__class__.__name__)
+            # Basic metadata validation — subclasses should set class attributes
+            if not getattr(self, "name", "") or not getattr(self, "capabilities", None):
+                self.logger.warning(
+                    "Agent %s missing metadata (name/capabilities).",
+                    self.__class__.__name__,
+                )
         except AgentInitError:
             # Already a typed error — let it propagate as-is
             raise

@@ -212,6 +212,7 @@ class OllamaClient(BaseLLMProvider):
         self,
         messages: str | list[dict[Any, Any]],
         system_prompt: str | None = None,
+        max_tokens: int | None = None,
     ) -> str:
         """
         Send a message to the model and return its response.
@@ -239,10 +240,10 @@ class OllamaClient(BaseLLMProvider):
                 )
 
             logger.info("Sending %s message(s) to model: %s", len(messages), self.model)
-            response = self.client.chat.completions.create(
-                model=self.model,
-                messages=messages,
-            )
+            request_kwargs = dict(model=self.model, messages=messages)
+            if max_tokens is not None:
+                request_kwargs["max_tokens"] = max_tokens
+            response = self.client.chat.completions.create(**request_kwargs)
             result = str(response.choices[0].message.content)
             logger.info("Successfully received response from model")
             return result

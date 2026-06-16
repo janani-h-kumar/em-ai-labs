@@ -55,15 +55,18 @@ class Executor:
             agent_name = task.assigned_agent
 
             if not agent_name:
-                agent_name = self.router.route_task(task)
+                routed = self.router.route_task(task)
 
-            agent_name = "weather_agent"  # TODO remove hardcoding
-            agent = self.agent_registry.get(agent_name)
+                # route_task may return (agent, confidence) or agent string
+                if isinstance(routed, tuple):
+                    agent_name = routed[0]
+                else:
+                    agent_name = routed
 
-            result = await agent.handle(
-                task,
-                context,
-            )
+            # Create agent instance on demand
+            agent = self.agent_registry.create_instance(agent_name)
+
+            result = await agent.handle(task, context)
 
             task.status = TaskStatus.COMPLETED
             task.result = result

@@ -1,0 +1,137 @@
+### Why ServiceContainer Exists
+
+As the harness evolves, multiple infrastructure components require access to shared services such as:
+
+* ConfigManager
+* LLM Provider
+* ToolRegistry
+* Memory
+
+Without a container, these dependencies are repeatedly created or passed through multiple layers, leading to duplicated initialization, inconsistent lifecycles, and tightly coupled constructors.
+
+The ServiceContainer acts as the application's dependency composition root.
+
+Its purpose is to:
+
+* Create shared infrastructure once
+* Own infrastructure lifecycle
+* Provide dependencies to factories and orchestration infrastructure
+* Avoid global singletons
+
+Example:
+
+AgentManager
+→ ServiceContainer
+→ Provider
+→ ToolRegistry
+→ Memory
+
+---
+
+### Why Not Use a Global Singleton?
+
+A global ConfigManager or Provider singleton introduces:
+
+* Hidden dependencies
+* Difficult testing
+* Global mutable state
+* Future multi-session limitations
+* Tight coupling between components
+
+Using a container keeps dependencies explicit while still centralizing infrastructure ownership.
+
+---
+
+### Why Not Pass the Container Everywhere?
+
+The ServiceContainer is an infrastructure concern, not a business logic concern.
+
+Only infrastructure layers should know about it:
+
+✓ AgentManager
+
+✓ AgentRegistry
+
+✓ AgentFactory
+
+✓ Orchestrator (limited use)
+
+Agents, tools, and providers should never depend on the container directly.
+
+Bad:
+
+WeatherAgent(container)
+
+Good:
+
+WeatherAgent(
+provider,
+weather_tool,
+)
+
+This keeps agents portable, testable, and independent of framework internals.
+
+---
+
+### What Belongs Inside ServiceContainer?
+
+Shared infrastructure only:
+
+* ConfigManager
+* Provider
+* ToolRegistry
+* Memory
+* Telemetry (future)
+
+Example:
+
+class ServiceContainer:
+
+```
+def __init__(self, config_manager):
+
+    self.config_manager = config_manager
+
+    self.provider = ProviderFactory.get_provider(
+        config_manager
+    )
+
+    self.tool_registry = ToolRegistry(
+        config_manager
+    )
+
+    self.memory = InProcessMemory()
+```
+
+---
+
+### What Does NOT Belong Inside ServiceContainer?
+
+Application flow components should remain separate:
+
+* AgentRegistry
+* AgentFactory
+* Router
+* Planner
+* Executor
+* ReACTLoop
+* Orchestrator
+
+These components use services from the container but are not themselves shared infrastructure.
+
+---
+
+### Architectural Principle
+
+The container should be created once during application startup and passed only to infrastructure layers.
+
+The dependency flow should be:
+
+AgentManager
+→ ServiceContainer
+→ AgentFactory
+→ Agent
+
+The container boundary stops at the factory.
+
+Business logic never sees the container.

@@ -18,82 +18,34 @@ class MessageRouter:
     - Fallback support
     """
 
-    def __init__(self) -> None:
+    def __init__(self, agent_capabilities: dict[str, list[str]] | None = None) -> None:
+        """If `agent_capabilities` is provided, build keyword patterns from it.
+
+        `agent_capabilities` should be a mapping: agent_name -> list of capability keywords.
+        """
         self.agent_patterns: dict[str, list[tuple[str, int]]] = {}
         self.regex_patterns: dict[str, list[tuple[re.Pattern[str], int]]] = {}
 
-        self._setup_patterns()
+        if agent_capabilities:
+            self._build_patterns_from_capabilities(agent_capabilities)
+        else:
+            self._setup_patterns()
 
     def _setup_patterns(self) -> None:
         """Initialize routing patterns."""
+        # No default patterns — router should be driven by agent metadata
+        self.agent_patterns = {}
+        self.regex_patterns = {}
 
-        self.agent_patterns = {
-            "weather_agent": [
-                ("weather", 10),
-                ("temperature", 10),
-                ("forecast", 10),
-                ("rain", 8),
-                ("snow", 8),
-                ("storm", 8),
-                ("humidity", 7),
-                ("hot", 6),
-                ("cold", 6),
-                ("sunny", 6),
-                ("cloudy", 6),
-                ("wind", 6),
-                ("climate", 5),
-                ("degrees", 5),
-                ("what's the weather", 12),
-                ("how's the weather", 12),
-                ("is it", 4),
-                ("will it", 4),
-            ],
-            "science": [
-                ("why", 8),
-                ("how does", 10),
-                ("what is", 6),
-                ("science", 8),
-                ("physics", 7),
-                ("chemistry", 7),
-                ("biology", 7),
-                ("space", 6),
-                ("universe", 6),
-                ("earth", 5),
-                ("experiment", 6),
-                ("theory", 5),
-            ],
-        }
+    def _build_patterns_from_capabilities(self, agent_capabilities: dict[str, list[str]]) -> None:
+        """Create keyword patterns from agent capabilities mapping."""
+        for agent, caps in agent_capabilities.items():
+            patterns = []
+            for cap in caps:
+                # default weight 10 for capability keywords
+                patterns.append((cap.lower(), 10))
 
-        self.regex_patterns = {
-            "weather_agent": [
-                (
-                    re.compile(
-                        r"weather (?:in|for|at) ([a-zA-Z\s]+)",
-                        re.IGNORECASE,
-                    ),
-                    15,
-                ),
-                (
-                    re.compile(
-                        r"(?:what's|how's) "
-                        r"(?:the )?weather "
-                        r"(?:like )?"
-                        r"(?:in )?([a-zA-Z\s]+)",
-                        re.IGNORECASE,
-                    ),
-                    20,
-                ),
-                (
-                    re.compile(
-                        r"(?:how|what) "
-                        r"(?:hot|cold) "
-                        r"(?:is it|will it be)",
-                        re.IGNORECASE,
-                    ),
-                    12,
-                ),
-            ]
-        }
+            self.agent_patterns[agent] = patterns
 
     def route_message(self, message: str) -> tuple[str, float]:
         """

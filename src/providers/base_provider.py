@@ -21,6 +21,7 @@ class BaseLLMProvider(ABC):
         self,
         messages: str | list[dict],
         system_prompt: str | None = None,
+        max_tokens: int | None = None,
     ) -> str:
         """
         Send a prompt and return the text response.
@@ -29,6 +30,8 @@ class BaseLLMProvider(ABC):
             messages: Either a plain string (single-turn) or a list of
                       {"role": ..., "content": ...} dicts (multi-turn).
             system_prompt: Optional system context to prepend.
+            max_tokens: Optional maximum number of tokens for the model
+                        response.
 
         Returns:
             The model's text response as a string.
