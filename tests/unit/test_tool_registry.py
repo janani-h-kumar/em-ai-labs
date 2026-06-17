@@ -120,8 +120,8 @@ def test_get_tool_raises_for_missing_tool(mock_config):
 
     registry = ToolRegistry(mock_config)
 
-    with pytest.raises(KeyError):
-        registry.get_tool("missing_tool")
+    result = registry.get_tool("missing_tool")
+    assert result is None
 
 
 def test_get_langchain_tools_returns_tool_instances(

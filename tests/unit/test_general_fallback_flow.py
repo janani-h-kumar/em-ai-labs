@@ -56,6 +56,7 @@ async def test_executor_routes_and_creates_general_agent():
 
         # Execute the task (this will route and create the agent)
         result = await executor.execute_task(task, context)
+        assert isinstance(result, str)
 
         # Verify the agent was created with 'general' name
         mock_registry.create_instance.assert_called_once_with("general")
