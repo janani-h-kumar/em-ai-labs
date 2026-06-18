@@ -8,9 +8,11 @@ import importlib
 import inspect
 import logging
 import pkgutil
+import types
 
 from src.agents.agent_factory import AgentFactory
 from src.agents.base_agent import BaseAgent
+from src.core.container import ServiceContainer
 
 logger = logging.getLogger(__name__)
 
@@ -30,7 +32,7 @@ class AgentRegistry:
     the moment any agent opens a DB connection or loads a model in initialize().
     """
 
-    def __init__(self, container):
+    def __init__(self, container: ServiceContainer) -> None:
         self.container = container
 
         # maps agent_name -> agent_class
@@ -47,7 +49,7 @@ class AgentRegistry:
 
         self.discover_agents()
 
-    def discover_agents(self):
+    def discover_agents(self) -> None:
         """Auto-discover all agent implementations and register classes."""
         import src.agents as agents_package
 
@@ -68,7 +70,7 @@ class AgentRegistry:
 
         logger.info("Registered agent classes: %s", list(self.agents.keys()))
 
-    def _register_module_agents(self, module):
+    def _register_module_agents(self, module: types.ModuleType) -> None:
         """Register BaseAgent subclasses from module (store classes only)."""
         for _, obj in inspect.getmembers(module, inspect.isclass):
             if not issubclass(obj, BaseAgent) or obj is BaseAgent:

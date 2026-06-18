@@ -56,6 +56,8 @@ async def test_executor_routes_and_creates_general_agent():
 
         # Execute the task (this will route and create the agent)
         result = await executor.execute_task(task, context)
+
+        # Result must be a string — GeneralAgent.handle() return contract
         assert isinstance(result, str)
 
         # Verify the agent was created with 'general' name

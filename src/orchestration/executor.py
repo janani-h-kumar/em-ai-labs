@@ -55,8 +55,8 @@ class Executor:
             span.set_attribute("task.id", task.id)
             span.set_attribute("task.description", task.description[:200])
             span.set_attribute("session.id", context.session_id)
-            correlation_id = get_correlation_id()
-            if correlation_id:
+            correlation_id: str | None = get_correlation_id()
+            if isinstance(correlation_id, str) and correlation_id:
                 span.set_attribute("correlation.id", correlation_id)
 
             start_time = time.perf_counter()
@@ -85,7 +85,10 @@ class Executor:
                     else:
                         agent_name = routed
 
-                span.set_attribute("agent.name", agent_name)
+                # Narrow to str for mypy — routing always resolves a name;
+                # if it didn't, create_instance() would raise immediately after.
+                resolved_agent_name: str = agent_name or ""
+                span.set_attribute("agent.name", resolved_agent_name)
 
                 # Create agent instance on demand
                 agent = self.agent_registry.create_instance(agent_name)
