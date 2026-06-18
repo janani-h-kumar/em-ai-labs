@@ -4,9 +4,14 @@ Task execution engine.
 
 import asyncio
 import logging
+import time
 from dataclasses import dataclass
 
+from opentelemetry import trace as otel_trace
+
 from src.orchestration.models import ExecutionContext, Task, TaskStatus
+from src.utils.logging_utils import get_correlation_id
+from src.utils.tracing import tracer
 
 logger = logging.getLogger(__name__)
 
@@ -20,6 +25,13 @@ class RouteResult:
 class Executor:
     """
     Executes orchestration tasks.
+
+    [Pillar 3] execute_task() is now wrapped in an OTel span. With no
+    OTEL_EXPORTER_OTLP_ENDPOINT configured this has zero overhead (NoOp
+    tracer — see src/utils/tracing.py). With Jaeger configured, every task
+    execution becomes a span carrying task id, agent name, session id,
+    correlation id, and duration — exactly the breakdown needed to answer
+    "where did the time go" instead of inferring it from log timestamps.
     """
 
     def __init__(
@@ -39,55 +51,89 @@ class Executor:
         Execute a single task.
         """
 
-        logger.info(
-            "Executing task",
-            extra={
-                "extra_data": {
-                    "task_id": task.id,
-                    "description": task.description,
-                }
-            },
-        )
+        with tracer.start_as_current_span("executor.execute_task") as span:
+            span.set_attribute("task.id", task.id)
+            span.set_attribute("task.description", task.description[:200])
+            span.set_attribute("session.id", context.session_id)
+            correlation_id = get_correlation_id()
+            if correlation_id:
+                span.set_attribute("correlation.id", correlation_id)
 
-        task.status = TaskStatus.RUNNING
+            start_time = time.perf_counter()
 
-        try:
-            agent_name = task.assigned_agent
-
-            if not agent_name:
-                routed = self.router.route_task(task)
-
-                # route_task may return (agent, confidence) or agent string
-                if isinstance(routed, tuple):
-                    agent_name = routed[0]
-                else:
-                    agent_name = routed
-
-            # Create agent instance on demand
-            agent = self.agent_registry.create_instance(agent_name)
-
-            result = await agent.handle(task, context)
-
-            task.status = TaskStatus.COMPLETED
-            task.result = result
-
-            context.completed_tasks[task.id] = result
-
-            return result
-
-        except Exception as e:
-            logger.exception(
-                "Task execution failed",
+            logger.info(
+                "Executing task",
                 extra={
                     "extra_data": {
                         "task_id": task.id,
+                        "description": task.description,
                     }
                 },
             )
 
-            task.status = TaskStatus.FAILED
+            task.status = TaskStatus.RUNNING
 
-            raise e
+            try:
+                agent_name = task.assigned_agent
+
+                if not agent_name:
+                    routed = self.router.route_task(task)
+
+                    # route_task may return (agent, confidence) or agent string
+                    if isinstance(routed, tuple):
+                        agent_name = routed[0]
+                    else:
+                        agent_name = routed
+
+                span.set_attribute("agent.name", agent_name)
+
+                # Create agent instance on demand
+                agent = self.agent_registry.create_instance(agent_name)
+
+                result = await agent.handle(task, context)
+
+                task.status = TaskStatus.COMPLETED
+                task.result = result
+
+                context.completed_tasks[task.id] = result
+
+                duration_ms = round((time.perf_counter() - start_time) * 1000, 1)
+                span.set_attribute("duration_ms", duration_ms)
+                span.set_attribute("task.status", "completed")
+
+                logger.info(
+                    "Task execution completed",
+                    extra={
+                        "extra_data": {
+                            "task_id": task.id,
+                            "agent_name": agent_name,
+                            "duration_ms": duration_ms,
+                        }
+                    },
+                )
+
+                return result
+
+            except Exception as e:
+                duration_ms = round((time.perf_counter() - start_time) * 1000, 1)
+                span.set_attribute("duration_ms", duration_ms)
+                span.set_attribute("task.status", "failed")
+                span.record_exception(e)
+                span.set_status(otel_trace.StatusCode.ERROR, str(e))
+
+                logger.exception(
+                    "Task execution failed",
+                    extra={
+                        "extra_data": {
+                            "task_id": task.id,
+                            "duration_ms": duration_ms,
+                        }
+                    },
+                )
+
+                task.status = TaskStatus.FAILED
+
+                raise e
 
     async def execute_parallel(
         self,
