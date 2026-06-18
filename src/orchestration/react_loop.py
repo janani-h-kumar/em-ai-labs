@@ -16,6 +16,13 @@ class ReACTLoop:
     Iterative reasoning and execution loop.
 
     Initial implementation is intentionally lightweight.
+
+    [Latency optimisation] Reasoning is now gated on whether there's
+    anything to reason about — a single-task plan on its first iteration
+    has no prior observations to react to, so the reasoning LLM call adds
+    latency without changing behaviour. Reasoning still fires whenever the
+    plan has more than one task (real sequencing decisions exist) or once
+    iteration 2+ is reached (real prior results exist to react to).
     """
 
     def __init__(
@@ -50,19 +57,30 @@ class ReACTLoop:
         graph = TaskGraph(tasks)
         final_results: list[Any] = []
 
+        if reasoning_interval < 1:
+            raise ValueError("reasoning_interval must be >= 1")
+
         while not graph.all_completed() and exec_state.iteration < max_iterations:
             exec_state.iteration += 1
 
-            # Reason step: ask planner to (re)consider plan if needed
-            # For now, planner is deterministic; record that we invoked it.
+            # Reason step: ask the LLM to (re)consider the plan if there's
+            # something worth reasoning about.
             exec_state.reasoning.append(f"Planner invoked iteration={exec_state.iteration}")
 
-            if reasoning_interval < 1:
-                raise ValueError("reasoning_interval must be >= 1")
+            # FIX [latency]: was `exec_state.iteration == 1 or (...)`, which
+            # guaranteed a reasoning LLM call on the very first iteration of
+            # every request — including single-task plans, where there are
+            # no prior observations yet for the model to reason about. That
+            # call was pure latency (~3s) with zero effect on the outcome.
+            #
+            # New rule: reason when the plan has more than one task (a real
+            # sequencing/adaptation decision exists even on iteration 1), or
+            # once we're past iteration 1 (real observations now exist).
+            # Interval gating (when configured) still applies on top of that.
+            has_reason_to_think = len(tasks) > 1 or exec_state.iteration > 1
+            interval_gate_passes = (exec_state.iteration - 1) % reasoning_interval == 0
+            should_reason = has_reason_to_think and interval_gate_passes
 
-            should_reason = exec_state.iteration == 1 or (
-                reasoning_interval > 1 and exec_state.iteration % reasoning_interval == 1
-            )
             if should_reason:
                 try:
                     recent_obs = exec_state.observations[-5:]
@@ -98,12 +116,17 @@ class ReACTLoop:
                     )
                     exec_state.reasoning.append(f"LLM error: {e}")
             else:
-                exec_state.reasoning.append("Reasoning skipped due to interval gating.")
+                if not has_reason_to_think:
+                    skip_reason = "single-task plan with no prior observations"
+                else:
+                    skip_reason = "interval gating"
+                exec_state.reasoning.append(f"Reasoning skipped due to {skip_reason}.")
                 logger.debug(
-                    "ReACTLoop.reasoning_skipped session=%s iteration=%s interval=%s",
+                    "ReACTLoop.reasoning_skipped session=%s iteration=%s task_count=%s reason=%s",
                     exec_state.session_id,
                     exec_state.iteration,
-                    reasoning_interval,
+                    len(tasks),
+                    skip_reason,
                 )
 
             ready = graph.get_ready_tasks()

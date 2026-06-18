@@ -130,6 +130,8 @@ def setup_structured_logging(
     for h in handlers:
         root_logger.addHandler(h)
 
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+
 
 def set_correlation_id(request_id: str | None = None) -> str:
     """

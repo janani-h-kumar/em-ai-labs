@@ -73,24 +73,47 @@ class Orchestrator:
             context=context,
         )
 
+        final_response = self.synthesize(goal, results)
+
         # Store the exchange
         history.add_user_message(goal)
-        history.add_ai_message(results[0] if results else "")
+        history.add_ai_message(final_response)
 
-        return self.synthesize(
-            goal,
-            results,
-        )
+        return final_response
 
     def synthesize(self, goal: str, results: list) -> str:
+        """
+        Combine task results into one coherent response.
+
+        [Pillar 2] Previously only joined results with newlines when there
+        were multiple results, and passed a single result through untouched.
+        Now always routes through the LLM when there is at least one result,
+        so the final response reads as one coherent answer to the original
+        goal rather than a concatenation of agent outputs. Falls back to the
+        raw result(s) if the LLM call fails — synthesis failure should not
+        lose the work the agents already did.
+        """
         if not results:
             return "No result generated."
+
         if len(results) == 1:
+            # Single-task plans are the common case (most goals don't need
+            # decomposition) — the agent's own response is already the
+            # answer, so skip the extra LLM round trip.
             return str(results[0])
+
         context_block = "\n\n".join(f"Result {i + 1}:\n{r}" for i, r in enumerate(results))
         prompt = (
             f"Original goal: {goal}\n\n"
             f"Agent results:\n{context_block}\n\n"
-            "Synthesise into one coherent, conversational response."
+            "Synthesise these results into one coherent, conversational response "
+            "that directly answers the original goal."
         )
-        return self.provider.chat_completion(prompt)
+
+        try:
+            return self.provider.chat_completion(prompt)
+        except Exception:
+            logger.exception(
+                "Synthesis LLM call failed goal=%r — falling back to raw results", goal
+            )
+            return "\n\n".join(str(r) for r in results)
