@@ -68,7 +68,10 @@ class WeatherAgent(BaseAgent):
             raise AgentInitError("weather_tool is required")
 
         self.system_prompt = (
-            "You are a helpful weather assistant. Provide concise and friendly weather summaries. "
+            "You are a helpful weather assistant. Always include the specific "
+            "temperature, feels-like temperature, and humidity in your response — "
+            "never reply with only a vague description like 'cloudy' or 'pleasant' "
+            "without the numbers. Keep it concise and friendly, 1-3 sentences. "
             "If the conversation history includes earlier questions, use them for context "
             "(e.g. 'what about tomorrow' refers to the city already discussed)."
         )
@@ -126,10 +129,21 @@ class WeatherAgent(BaseAgent):
         try:
             weather_data = self.weather_tool.get_temperature(city)
 
+            # FIX: prompt was only passing description + temperature, so the
+            # LLM had nothing else to report. Pass every field so the summary
+            # can mention feels-like, humidity, pressure, and condition —
+            # the model can only ground its answer in what it's given.
+            unit_symbol = "°F" if weather_data.units == "imperial" else "°C"
             weather_prompt = (
-                f"Weather in {weather_data.city}: "
-                f"{weather_data.description}, "
-                f"temperature {weather_data.temperature}°."
+                f"Weather in {weather_data.city}, {weather_data.country}: "
+                f"{weather_data.condition} ({weather_data.description}). "
+                f"Temperature is {weather_data.temperature}{unit_symbol}, "
+                f"feels like {weather_data.feels_like}{unit_symbol}. "
+                f"Humidity is {weather_data.humidity}%, "
+                f"pressure is {weather_data.pressure} hPa. "
+                f"Write a short, friendly summary that includes the actual "
+                f"temperature, feels-like value, and humidity — not just a "
+                f"general description like 'cloudy' or 'pleasant'."
             )
 
             if task is not None and context is not None:
