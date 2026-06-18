@@ -31,7 +31,9 @@ class GeneralAgent(BaseAgent):
             raise AgentInitError("base_llm_provider is required")
 
         self.system_prompt = (
-            "You are a helpful assistant. Respond succinctly and clearly to general user requests."
+            "You are a helpful assistant. Respond succinctly and clearly to general user "
+            "requests. Use the conversation history provided, if any, to stay consistent "
+            "with what was discussed earlier."
         )
         logger.info("GeneralAgent initialized successfully")
 
@@ -39,15 +41,19 @@ class GeneralAgent(BaseAgent):
         """
         Handle a fallback task via the LLM provider.
 
-        FIX: Removed bare except that swallowed all failures silently.
+        [Pillar 1] Now builds messages via BaseAgent._build_messages() so
+        conversation history (context.memory) is injected before the current
+        task — previously only task.description was sent, discarding any
+        prior turns the orchestrator had already assembled.
+
         Raises AgentExecutionError so the orchestrator knows the task failed
         and can set TaskStatus.FAILED rather than recording a sorry message
         as a successful result.
         """
-        prompt = task.description
+        messages = self._build_messages(task, context)
         try:
             response = self.base_llm_provider.chat_completion(
-                prompt,
+                messages,
                 system_prompt=self.system_prompt,
             )
             return str(response)

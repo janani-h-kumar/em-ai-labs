@@ -7,11 +7,13 @@ Design contract:
 - Structured logging via logging_utils is set up at the entrypoint (main.py);
   agents just call logger.getLogger(__name__) — the JSON formatter is already active.
 - health_check() is provided here; subclasses may override to add domain checks.
+- _build_messages() is provided here; subclasses use it to make every LLM call
+  memory-aware without each agent re-implementing context injection. [Pillar 1]
 """
 
 import logging
 from abc import ABC, abstractmethod
-from datetime import UTC, datetime  # FIX: import UTC alongside datetime
+from datetime import UTC, datetime
 from typing import Any
 
 from src.utils.config_loader import ConfigManager
@@ -52,6 +54,7 @@ class BaseAgent(ABC):
     - handle() entrypoint — the router and orchestrator always call this.
     - Structured logging at init and on failure.
     - health_check() for monitoring and smoke-testing.
+    - _build_messages() for memory-aware LLM calls (see Pillar 1 below).
 
     Usage:
         class WeatherAgent(BaseAgent):
@@ -62,19 +65,36 @@ class BaseAgent(ABC):
 
             async def handle(self, task, context) -> str:
                 city = self.extract_city(task.description)
-                return await self.get_weather_summary(city)
+                messages = self._build_messages(task, context)
+                return self.base_llm_provider.chat_completion(
+                    messages, system_prompt=self.system_prompt
+                )
 
     Why config_manager is injected (not a path string):
         Passing a path string forces the base class to know about the
         filesystem layout and creates a new ConfigManager per agent.
         Injecting a shared ConfigManager means one load, one source of
         truth, and trivial testing (just pass a mock).
+
+    Memory injection contract [Pillar 1]:
+        ExecutionContext.memory is a list[dict] of {"role", "content"} turns,
+        already in the shape BaseLLMProvider.chat_completion() expects for its
+        `messages` parameter. Before this change, context.memory was built by
+        the Orchestrator but no agent ever read it — every LLM call used only
+        task.description, discarding conversation history.
+
+        _build_messages() closes that gap once, here, so every current and
+        future agent is memory-aware automatically — no per-agent wiring.
     """
 
     # Metadata contract (subclasses should override)
     name: str = ""
     description: str = ""
     capabilities: list[str] | None = None
+
+    # Number of most-recent memory turns to inject into every LLM call.
+    # Override per-agent if a domain needs more or less context.
+    memory_window: int = 6
 
     def __init__(self, config_manager: ConfigManager) -> None:
         """
@@ -168,5 +188,62 @@ class BaseAgent(ABC):
             "agent": self.__class__.__name__,
             "status": "healthy" if self._initialized else "unhealthy",
             "initialized": self._initialized,
-            "timestamp": datetime.now(UTC).isoformat(),  # FIX: utcnow() deprecated in 3.12
+            "timestamp": datetime.now(UTC).isoformat(),
         }
+
+    def _build_messages(
+        self,
+        task: Any,
+        context: Any,
+        extra_content: str | None = None,
+    ) -> list[dict[str, str]]:
+        """
+        Build a memory-aware message list for BaseLLMProvider.chat_completion().
+
+        [Pillar 1] This is the single place context injection happens. Every
+        agent calls this instead of passing task.description directly, so
+        conversation history flows into every LLM call without each agent
+        re-implementing the same plumbing.
+
+        Args:
+            task: Task with .description — the current request.
+            context: ExecutionContext with .memory — a list[dict] of prior
+                     {"role", "content"} turns. May be None or empty;
+                     handled gracefully either way.
+            extra_content: Optional additional content to use in place of
+                     task.description (e.g. a pre-formatted prompt with
+                     tool results already interpolated, as WeatherAgent does).
+
+        Returns:
+            list[dict[str, str]] in the shape BaseLLMProvider.chat_completion()
+            expects: [{"role": "user"|"assistant", "content": "..."}].
+            Memory turns come first (oldest to newest), current task last.
+
+        Example:
+            messages = self._build_messages(task, context)
+            # [
+            #   {"role": "human", "content": "What's the weather in Seattle?"},
+            #   {"role": "ai", "content": "Seattle is 52°F with light rain."},
+            #   {"role": "user", "content": "What about tomorrow?"},
+            # ]
+            response = self.base_llm_provider.chat_completion(
+                messages, system_prompt=self.system_prompt
+            )
+        """
+        messages: list[dict[str, str]] = []
+
+        memory_turns = getattr(context, "memory", None) or []
+        if memory_turns:
+            window = memory_turns[-self.memory_window :]
+            for turn in window:
+                role = turn.get("role", "user")
+                content = turn.get("content", "")
+                if content:
+                    messages.append({"role": role, "content": content})
+
+        current_content = (
+            extra_content if extra_content is not None else getattr(task, "description", "")
+        )
+        messages.append({"role": "user", "content": current_content})
+
+        return messages

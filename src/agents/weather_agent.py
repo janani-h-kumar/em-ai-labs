@@ -68,7 +68,9 @@ class WeatherAgent(BaseAgent):
             raise AgentInitError("weather_tool is required")
 
         self.system_prompt = (
-            "You are a helpful weather assistant. Provide concise and friendly weather summaries."
+            "You are a helpful weather assistant. Provide concise and friendly weather summaries. "
+            "If the conversation history includes earlier questions, use them for context "
+            "(e.g. 'what about tomorrow' refers to the city already discussed)."
         )
 
         logger.info("WeatherAgent initialized successfully")
@@ -109,9 +111,14 @@ class WeatherAgent(BaseAgent):
 
         return "New York"
 
-    async def get_weather_summary(self, city: str) -> str:
+    async def get_weather_summary(self, city: str, task=None, context=None) -> str:
         """
         Fetch weather and generate summary.
+
+        [Pillar 1] Now accepts the optional task/context so the weather
+        prompt can be assembled via BaseAgent._build_messages() — meaning
+        a follow-up like "what about tomorrow?" carries the previously
+        discussed city/forecast as context instead of being answered cold.
         """
         if not city or not city.strip():
             raise ValueError("city must be a non-empty string")
@@ -119,13 +126,23 @@ class WeatherAgent(BaseAgent):
         try:
             weather_data = self.weather_tool.get_temperature(city)
 
-            prompt = (
+            weather_prompt = (
                 f"Weather in {weather_data.city}: "
                 f"{weather_data.description}, "
                 f"temperature {weather_data.temperature}°."
             )
 
-            summary = self.base_llm_provider.chat_completion(prompt)
+            if task is not None and context is not None:
+                messages = self._build_messages(task, context, extra_content=weather_prompt)
+                summary = self.base_llm_provider.chat_completion(
+                    messages, system_prompt=self.system_prompt
+                )
+            else:
+                # Fallback for direct calls without orchestration context
+                # (e.g. unit tests calling get_weather_summary() in isolation).
+                summary = self.base_llm_provider.chat_completion(
+                    weather_prompt, system_prompt=self.system_prompt
+                )
 
             return summary
 
@@ -138,4 +155,5 @@ class WeatherAgent(BaseAgent):
 
     async def handle(self, task, context):
         query = task.description or ""
-        return await self.get_weather_summary(self.extract_city(query))
+        city = self.extract_city(query)
+        return await self.get_weather_summary(city, task=task, context=context)
