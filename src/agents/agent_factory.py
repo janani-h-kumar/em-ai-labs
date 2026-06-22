@@ -15,13 +15,11 @@ class AgentFactory:
 
     def __init__(
         self,
-        config_manager,
-        provider,
-        tool_registry,
+        container,
     ):
-        self.provider = provider
-        self.tool_registry = tool_registry
-        self.config_manager = config_manager
+        self.provider = container.provider
+        self.tool_registry = container.tool_registry
+        self.config_manager = container.config_manager
 
     def create(self, agent_class):
         """Create an agent instance using constructor introspection."""

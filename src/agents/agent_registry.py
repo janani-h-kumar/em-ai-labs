@@ -42,9 +42,7 @@ class AgentRegistry:
         self._instances: dict[str, BaseAgent] = {}
 
         self.agent_factory = AgentFactory(
-            config_manager=container.config_manager,
-            provider=container.provider,
-            tool_registry=container.tool_registry,
+            container=container,
         )
 
         self.discover_agents()

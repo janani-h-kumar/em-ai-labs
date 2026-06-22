@@ -8,7 +8,24 @@ Design contract:
   agents just call logger.getLogger(__name__) — the JSON formatter is already active.
 - health_check() is provided here; subclasses may override to add domain checks.
 - _build_messages() is provided here; subclasses use it to make every LLM call
-  memory-aware without each agent re-implementing context injection. [Pillar 1]
+  memory-aware without each agent re-implementing context injection.
+
+Architectural Rule:
+
+Agents are stateless services.
+
+Do not store:
+    self.session_id
+    self.current_user
+    self.history
+    self.last_result
+
+Store only:
+    injected dependencies
+    prompts
+    configuration
+
+Request state belongs in ExecutionContext.
 """
 
 import logging

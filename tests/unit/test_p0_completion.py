@@ -70,9 +70,7 @@ def test_p0_agent_factory_uses_introspection():
     from src.agents.agent_factory import AgentFactory
 
     factory = AgentFactory(
-        config_manager=Mock(),
-        provider=Mock(),
-        tool_registry=Mock(),
+        container=Mock(),
     )
 
     # Factory should accept any agent class and introspect it
