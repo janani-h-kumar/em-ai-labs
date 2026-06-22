@@ -4,7 +4,6 @@ Main orchestration engine.
 
 import logging
 
-from src.memory import InProcessMemory
 from src.orchestration.executor import Executor
 from src.orchestration.models import ExecutionContext
 from src.orchestration.planner import Planner
@@ -19,11 +18,11 @@ class Orchestrator:
     Coordinates planning, execution, and synthesis.
     """
 
-    def __init__(self, agent_registry, router, provider: BaseLLMProvider):
+    def __init__(self, agent_registry, router, provider: BaseLLMProvider, memory):
         self.agent_registry = agent_registry
         self.router = router
         self.provider: BaseLLMProvider = provider
-        self.memory = InProcessMemory()
+        self.memory = memory
 
         self.planner = Planner()
 

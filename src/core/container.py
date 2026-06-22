@@ -2,6 +2,7 @@
 Application dependency container.
 """
 
+from src.memory import InProcessMemory
 from src.providers.provider_factory import (
     ProviderFactory,
 )
@@ -31,3 +32,8 @@ class ServiceContainer:
         self.tool_registry = ToolRegistry(config_manager)
 
         self.tool_registry.discover_tools()
+
+        # -----------------------------------------
+        # Memory
+        # -----------------------------------------
+        self.memory = InProcessMemory()

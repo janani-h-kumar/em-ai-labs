@@ -87,6 +87,7 @@ class AgentManager:
                 agent_registry=self.agent_registry,
                 router=self.router,
                 provider=self.container.provider,
+                memory=self.container.memory,
             )
 
             logger.info("AgentManager initialised successfully")
