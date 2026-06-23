@@ -1,0 +1,396 @@
+I would keep the ADRs intentionally lightweight. P1 should improve extensibility without introducing framework-heavy architecture.
+
+---
+
+# ADR-001: Introduce AgentDescriptor Metadata
+
+## Status
+
+Accepted
+
+## Context
+
+`AgentRegistry` currently stores raw agent classes:
+
+```python
+dict[str, type[BaseAgent]]
+```
+
+Routing and discovery depend on information scattered across agents and router rules.
+
+Future improvements such as:
+
+* capability-based routing
+* semantic routing
+* agent catalogs
+* versioning
+
+need metadata separate from implementation.
+
+## Decision
+
+Introduce:
+
+```python
+@dataclass
+class AgentDescriptor:
+    name: str
+    description: str
+    capabilities: list[str]
+    version: str = "1.0"
+    agent_class: type[BaseAgent]
+```
+
+Registry stores:
+
+```python
+dict[str, AgentDescriptor]
+```
+
+AgentFactory continues creating agents from:
+
+```python
+descriptor.agent_class
+```
+
+## Consequences
+
+### Benefits
+
+* clean separation of metadata and implementation
+* router depends on descriptors, not classes
+* enables future semantic routing
+
+### Tradeoffs
+
+* one additional object
+
+---
+
+# ADR-002: Capability-Driven Routing
+
+## Status
+
+Accepted
+
+## Context
+
+Current router uses keyword and regex scoring.
+
+The desired routing model should depend on agent capabilities rather than implementation details.
+
+Full embedding-based routing is unnecessary today.
+
+## Decision
+
+Router operates on:
+
+```python
+AgentDescriptor.capabilities
+```
+
+Initial implementation remains rule-based:
+
+```python
+capabilities = [
+    "weather",
+    "forecast",
+    "temperature"
+]
+```
+
+Simple token overlap determines the candidate agent.
+
+Later implementations may replace scoring with:
+
+* embeddings
+* LLM selection
+* hybrid routing
+
+without changing the registry.
+
+## Consequences
+
+### Benefits
+
+* separates routing from agents
+* easy migration path
+
+### Tradeoffs
+
+* routing quality remains simple
+
+---
+
+# ADR-003: Single ExecutionContext
+
+## Status
+
+Accepted
+
+## Context
+
+State currently exists across:
+
+* ExecutionContext
+* ExecutionState
+* temporary variables
+
+This fragments orchestration state.
+
+A full event-sourcing architecture would be excessive.
+
+## Decision
+
+Merge orchestration state into one object:
+
+```python
+@dataclass
+class ExecutionContext:
+    session_id: str
+    goal: str
+
+    observations: list[str]
+    reasoning_history: list[str]
+
+    task_state: dict[str, TaskStatus]
+
+    metadata: dict[str, Any]
+
+    memory: MemoryManager
+```
+
+Remove:
+
+```python
+ExecutionState
+```
+
+No separate state objects are introduced.
+
+## Consequences
+
+### Benefits
+
+* one place for state
+* easier debugging
+* easier serialization
+
+### Tradeoffs
+
+* slightly larger context object
+
+---
+
+# ADR-004: Lightweight ReACT Loop
+
+## Status
+
+Accepted
+
+## Context
+
+Current execution resembles:
+
+```
+Plan
+Execute
+Synthesize
+```
+
+The architecture should support iterative reasoning, but a full LangGraph-style state machine is unnecessary.
+
+## Decision
+
+Adopt the following loop:
+
+```
+Reason
+Act
+Observe
+Repeat
+Respond
+```
+
+State is stored in `ExecutionContext`.
+
+```python
+context.reasoning_history
+context.observations
+```
+
+Pseudo-code:
+
+```python
+for i in range(MAX_ITERATIONS):
+
+    thought = reason(context)
+    context.reasoning_history.append(thought)
+
+    action_result = act(thought)
+
+    observation = observe(action_result)
+    context.observations.append(observation)
+
+    if goal_satisfied(context):
+        break
+
+return respond(context)
+```
+
+Maximum iterations default to:
+
+```python
+MAX_ITERATIONS = 5
+```
+
+## Consequences
+
+### Benefits
+
+* genuine ReACT behavior
+* bounded execution
+* no state machine complexity
+
+### Tradeoffs
+
+* still linear rather than graph-based
+
+---
+
+# ADR-005: ExecutionContext Is the Sole Owner of Request State
+
+## Status
+
+Accepted
+
+## Context
+
+Agents are intended to be reusable services.
+
+Request-specific state should not be stored inside agent instances.
+
+## Decision
+
+All request state lives inside:
+
+```python
+ExecutionContext
+```
+
+Agents must be stateless:
+
+```python
+class BaseAgent:
+    def execute(
+        self,
+        task: Task,
+        context: ExecutionContext
+    ) -> AgentResult:
+        ...
+```
+
+Agents may hold:
+
+* provider
+* tools
+* config
+
+Agents must not hold:
+
+* session_id
+* memory history
+* observations
+* reasoning history
+* task progress
+
+## Consequences
+
+### Benefits
+
+* agents become reusable services
+* easier testing
+* concurrency-safe
+
+---
+
+# ADR-006: Incremental Evolution Toward Semantic Routing
+
+## Status
+
+Accepted
+
+## Context
+
+Embedding-based routing is desirable but premature.
+
+Introducing vector stores and semantic infrastructure now would add complexity without immediate benefit.
+
+## Decision
+
+Architecture should evolve in stages:
+
+### Stage 1
+
+Keyword overlap on capabilities.
+
+```
+Query
+ ↓
+Capability matching
+ ↓
+Agent
+```
+
+### Stage 2
+
+LLM-assisted selection.
+
+```
+Query
+ ↓
+Agent descriptors
+ ↓
+LLM selector
+ ↓
+Agent
+```
+
+### Stage 3
+
+Embedding similarity.
+
+```
+Query embedding
+ ↓
+Descriptor embeddings
+ ↓
+Nearest agent
+```
+
+No additional infrastructure will be introduced until Stage 1 becomes insufficient.
+
+## Consequences
+
+### Benefits
+
+* avoids premature optimization
+* preserves upgrade path
+
+---
+
+# Minimal Implementation Order
+
+I would implement them in this order:
+
+```
+1. ADR-001 AgentDescriptor
+                ↓
+2. ADR-002 Capability Router
+                ↓
+3. ADR-003 Single ExecutionContext
+                ↓
+4. ADR-004 Lightweight ReACT
+                ↓
+5. ADR-005 Stateless Agent Rule
+```

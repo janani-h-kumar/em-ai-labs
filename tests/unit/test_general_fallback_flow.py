@@ -124,8 +124,8 @@ async def test_full_flow_general_agent_discovery_to_execution():
                     from src.router import MessageRouter
 
                     agent_capabilities = {
-                        name: getattr(agent_class, "capabilities", []) or []
-                        for name, agent_class in registry.agents.items()
+                        name: descriptor.capabilities
+                        for name, descriptor in registry.agents.items()
                     }
 
                     router = MessageRouter(agent_capabilities=agent_capabilities)

@@ -9,6 +9,7 @@ import inspect
 import logging
 import pkgutil
 import types
+from dataclasses import dataclass
 
 from src.agents.agent_factory import AgentFactory
 from src.agents.base_agent import BaseAgent
@@ -17,26 +18,37 @@ from src.core.container import ServiceContainer
 logger = logging.getLogger(__name__)
 
 
+@dataclass
+class AgentDescriptor:
+    """Metadata descriptor for a registered agent."""
+
+    name: str
+    description: str
+    capabilities: list[str]
+    agent_class: type[BaseAgent]
+    version: str = "1.0"
+
+
 class AgentRegistry:
     """
     Dynamically discovers and registers agent classes.
 
     Responsibilities:
     - Discover agent classes
-    - Store class references and metadata (no instances)
+    - Store descriptor metadata and class references (no instances)
     - Provide factory-backed instance creation when requested
 
-    FIX: Instances are now cached after first construction. Before this fix,
-    every call to create_instance() ran the full constructor including
-    initialize() — correct for stateless agents now, but a resource leak
-    the moment any agent opens a DB connection or loads a model in initialize().
+    FIXME: Backwards compatibility: temporarily accept raw agent class entries
+    when tests or older code still assign classes directly to registry.agents.
+    This will be removed once the descriptor migration is complete across the
+    whole codebase.
     """
 
     def __init__(self, container: ServiceContainer) -> None:
         self.container = container
 
-        # maps agent_name -> agent_class
-        self.agents: dict[str, type[BaseAgent]] = {}
+        # maps agent_name -> descriptor or raw agent class
+        self.agents: dict[str, AgentDescriptor | type[BaseAgent]] = {}
 
         # FIX: cache constructed instances — construct once, reuse per request
         self._instances: dict[str, BaseAgent] = {}
@@ -69,14 +81,20 @@ class AgentRegistry:
         logger.info("Registered agent classes: %s", list(self.agents.keys()))
 
     def _register_module_agents(self, module: types.ModuleType) -> None:
-        """Register BaseAgent subclasses from module (store classes only)."""
+        """Register BaseAgent subclasses from module (store descriptors only)."""
         for _, obj in inspect.getmembers(module, inspect.isclass):
             if not issubclass(obj, BaseAgent) or obj is BaseAgent:
                 continue
             try:
                 agent_name = getattr(obj, "name", obj.__name__.replace("Agent", "").lower())
-                self.agents[agent_name] = obj
-                logger.info("Registered agent class: %s -> %s", agent_name, obj.__name__)
+                descriptor = AgentDescriptor(
+                    name=agent_name,
+                    description=getattr(obj, "description", ""),
+                    capabilities=getattr(obj, "capabilities", []) or [],
+                    agent_class=obj,
+                )
+                self.agents[agent_name] = descriptor
+                logger.info("Registered agent descriptor: %s -> %s", agent_name, obj.__name__)
             except Exception:
                 logger.exception("Failed to register agent class: %s", obj.__name__)
 
@@ -92,7 +110,11 @@ class AgentRegistry:
             raise ValueError(f"Agent '{name}' not found. Available: {list(self.agents)}")
 
         if name not in self._instances:
-            agent_class = self.agents[name]
+            descriptor_or_class = self.agents[name]
+            if isinstance(descriptor_or_class, AgentDescriptor):
+                agent_class = descriptor_or_class.agent_class
+            else:
+                agent_class = descriptor_or_class
             self._instances[name] = self.agent_factory.create(agent_class)
             logger.info("Constructed and cached agent instance: %s", name)
 
@@ -106,7 +128,10 @@ class AgentRegistry:
         """Return the agent class for the given name."""
         if name not in self.agents:
             raise ValueError(f"Agent '{name}' not found.")
-        return self.agents[name]
+        descriptor_or_class = self.agents[name]
+        if isinstance(descriptor_or_class, AgentDescriptor):
+            return descriptor_or_class.agent_class
+        return descriptor_or_class
 
     def list_agents(self) -> list[str]:
         return list(self.agents.keys())
@@ -117,9 +142,17 @@ class AgentRegistry:
     def health_check(self) -> dict[str, dict]:
         """Return a lightweight health map for discovered agents.
 
-        Avoids instantiating agents — uses class metadata only.
+        Avoids instantiating agents — uses descriptor metadata only.
         """
         return {
-            name: {"status": "discovered", "class": cls.__name__}
-            for name, cls in self.agents.items()
+            name: {
+                "status": "discovered",
+                "class": descriptor.agent_class.__name__
+                if isinstance(descriptor, AgentDescriptor)
+                else descriptor.__name__,
+                "capabilities": descriptor.capabilities
+                if isinstance(descriptor, AgentDescriptor)
+                else getattr(descriptor, "capabilities", []),
+            }
+            for name, descriptor in self.agents.items()
         }

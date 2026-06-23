@@ -2,7 +2,7 @@ from types import SimpleNamespace
 from unittest.mock import Mock
 
 from src.agents.agent_factory import AgentFactory
-from src.agents.agent_registry import AgentRegistry
+from src.agents.agent_registry import AgentDescriptor, AgentRegistry
 
 
 def test_agentfactory_dynamic_injection():
@@ -70,7 +70,12 @@ def test_registry_create_instance():
         def __init__(self, config_manager):
             self.config_manager = config_manager
 
-    registry.agents["simple_agent"] = SimpleAgent
+    registry.agents["simple_agent"] = AgentDescriptor(
+        name="simple_agent",
+        description="Simple test agent",
+        capabilities=["simple"],
+        agent_class=SimpleAgent,
+    )
 
     instance = registry.create_instance("simple_agent")
 
@@ -97,7 +102,12 @@ def test_registry_get_is_alias_for_create_instance():
         def __init__(self, config_manager):
             self.config_manager = config_manager
 
-    registry.agents["simple_agent"] = SimpleAgent
+    registry.agents["simple_agent"] = AgentDescriptor(
+        name="simple_agent",
+        description="Simple test agent",
+        capabilities=["simple"],
+        agent_class=SimpleAgent,
+    )
 
     instance = registry.get("simple_agent")
 

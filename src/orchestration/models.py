@@ -50,6 +50,12 @@ class ExecutionContext:
 
     memory: list[dict[str, Any]] = field(default_factory=list)
 
+    observations: list[str] = field(default_factory=list)
+
+    reasoning_history: list[str] = field(default_factory=list)
+
+    task_state: dict[str, TaskStatus] = field(default_factory=dict)
+
     completed_tasks: dict[str, Any] = field(default_factory=dict)
 
     metadata: dict[str, Any] = field(default_factory=dict)

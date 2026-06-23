@@ -124,8 +124,7 @@ def test_p0_fallback_works_end_to_end():
 
     # Build router from metadata
     agent_capabilities = {
-        name: getattr(agent_class, "capabilities", []) or []
-        for name, agent_class in registry.agents.items()
+        name: descriptor.capabilities for name, descriptor in registry.agents.items()
     }
     router = MessageRouter(agent_capabilities=agent_capabilities)
 

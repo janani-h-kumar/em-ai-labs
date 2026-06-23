@@ -64,8 +64,8 @@ class AgentManager:
             # -------------------------------------------------
 
             agent_capabilities = {
-                name: getattr(agent_class, "capabilities", []) or []
-                for name, agent_class in self.agent_registry.agents.items()
+                name: descriptor.capabilities
+                for name, descriptor in self.agent_registry.agents.items()
             }
 
             logger.info(
