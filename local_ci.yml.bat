@@ -38,8 +38,11 @@ uv run pip-audit ^
   --ignore-vuln GHSA-pjwx-r37v-7724
 
 echo.
-echo 🧪 Running unit tests...
-uv run pytest tests/unit/ -v --tb=short
+echo 🧪 Running unit tests with coverage...
+set OLLAMA_HOST=
+set WEATHER_API_KEY=
+set ANTHROPIC_API_KEY=
+uv run pytest tests/unit/ -v --tb=short --cov=src --cov-report=term-missing --cov-report=xml --cov-fail-under=60
 
 echo.
 echo ==============================

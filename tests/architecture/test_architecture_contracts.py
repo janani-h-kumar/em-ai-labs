@@ -56,8 +56,6 @@ def test_service_container_owns_core_dependencies():
         "memory",
     ]
 
-    container_members = vars(ServiceContainer)
-
     for attribute in required_attributes:
         assert attribute in ServiceContainer.__dict__ or hasattr(ServiceContainer, attribute), (
             f"Missing container dependency: {attribute}"
