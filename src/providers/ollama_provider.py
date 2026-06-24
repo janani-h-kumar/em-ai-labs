@@ -245,7 +245,28 @@ class OllamaClient(BaseLLMProvider):
                 request_kwargs["max_tokens"] = max_tokens
             response = self.client.chat.completions.create(**request_kwargs)
             result = str(response.choices[0].message.content)
-            logger.info("Successfully received response from model")
+            token_usage = getattr(response, "usage", None)
+            if token_usage is not None:
+                try:
+                    prompt_tokens = int(token_usage.get("prompt_tokens", 0))
+                    completion_tokens = int(token_usage.get("completion_tokens", 0))
+                    total_tokens = int(token_usage.get("total_tokens", 0))
+                except Exception:
+                    prompt_tokens = completion_tokens = total_tokens = 0
+            else:
+                prompt_tokens = completion_tokens = total_tokens = 0
+
+            logger.info(
+                "Successfully received response from model",
+                extra={
+                    "extra_data": {
+                        "model_name": self.model,
+                        "prompt_tokens": prompt_tokens,
+                        "completion_tokens": completion_tokens,
+                        "total_tokens": total_tokens,
+                    }
+                },
+            )
             return result
 
         except OllamaError:

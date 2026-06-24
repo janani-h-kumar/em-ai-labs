@@ -25,7 +25,31 @@ class ClaudeProvider(BaseLLMProvider):
             kwargs["system"] = system_prompt
 
         response = self._client.messages.create(**kwargs)
-        return response.content[0].text
+        result = response.content[0].text
+
+        token_usage = getattr(response, "usage", None)
+        prompt_tokens = completion_tokens = total_tokens = 0
+        if token_usage is not None:
+            try:
+                prompt_tokens = int(token_usage.get("prompt_tokens", 0))
+                completion_tokens = int(token_usage.get("completion_tokens", 0))
+                total_tokens = int(token_usage.get("total_tokens", 0))
+            except Exception:
+                prompt_tokens = completion_tokens = total_tokens = 0
+
+        logger.info(
+            "Successfully received response from model",
+            extra={
+                "extra_data": {
+                    "model_name": self._model,
+                    "prompt_tokens": prompt_tokens,
+                    "completion_tokens": completion_tokens,
+                    "total_tokens": total_tokens,
+                }
+            },
+        )
+
+        return result
 
     def health_check(self) -> HealthStatus:
         try:

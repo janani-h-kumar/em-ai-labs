@@ -10,11 +10,13 @@ Responsibilities:
 
 import asyncio
 import logging
+import time
 from pathlib import Path
 from typing import Any
 
 from src.agents.agent_registry import AgentDescriptor, AgentRegistry
 from src.core.container import ServiceContainer
+from src.observability.tracing import create_span, increment_request_count
 from src.orchestration.orchestrator import Orchestrator
 from src.router import MessageRouter
 from src.utils.config_loader import ConfigManager
@@ -114,31 +116,45 @@ class AgentManager:
         request_id = set_correlation_id()
 
         try:
-            logger.info(
-                "Handling message",
-                extra={
-                    "extra_data": {
-                        "request_id": request_id,
-                        "message_length": len(message),
-                    }
-                },
-            )
-
-            response = await self.orchestrator.run(
-                goal=message,
+            current_request = increment_request_count()
+            start_time = time.perf_counter()
+            with create_span(
+                "agent_manager.handle",
+                request_id=request_id,
                 session_id=request_id,
-            )
+                request_count=current_request,
+                message_length=len(message),
+            ) as span:
+                logger.info(
+                    "Handling message",
+                    extra={
+                        "extra_data": {
+                            "request_id": request_id,
+                            "message_length": len(message),
+                            "request_count": current_request,
+                        }
+                    },
+                )
 
-            logger.info(
-                "Request completed successfully",
-                extra={
-                    "extra_data": {
-                        "request_id": request_id,
-                    }
-                },
-            )
+                response = await self.orchestrator.run(
+                    goal=message,
+                    session_id=request_id,
+                )
 
-            return response
+                duration_ms = round((time.perf_counter() - start_time) * 1000, 1)
+                span.set_attribute("request_latency_ms", duration_ms)
+                logger.info(
+                    "Request completed successfully",
+                    extra={
+                        "extra_data": {
+                            "request_id": request_id,
+                            "request_latency_ms": duration_ms,
+                            "request_count": current_request,
+                        }
+                    },
+                )
+
+                return response
 
         except Exception:
             logger.exception(

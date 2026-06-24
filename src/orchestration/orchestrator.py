@@ -3,7 +3,9 @@ Main orchestration engine.
 """
 
 import logging
+import time
 
+from src.observability.tracing import create_span
 from src.orchestration.executor import Executor
 from src.orchestration.models import ExecutionContext
 from src.orchestration.planner import Planner
@@ -44,6 +46,7 @@ class Orchestrator:
         """
         Execute orchestration lifecycle.
         """
+        start_time = time.perf_counter()
         logger.info(
             "Starting orchestration",
             extra={
@@ -54,31 +57,60 @@ class Orchestrator:
             },
         )
 
-        history = self.memory.get_history(session_id)
-        memory_context = [
-            {"role": m.type, "content": m.content}
-            for m in history.messages[-6:]  # last 3 turns for context window
-        ]
-
-        context = ExecutionContext(
+        with create_span(
+            "orchestrator.run",
             session_id=session_id,
             goal=goal,
-            memory=memory_context,
-        )
+        ) as span:
+            history = self.memory.get_history(session_id)
+            memory_start = time.perf_counter()
+            memory_context = [
+                {"role": m.type, "content": m.content}
+                for m in history.messages[-6:]  # last 3 turns for context window
+            ]
+            memory_latency_ms = round((time.perf_counter() - memory_start) * 1000, 1)
+            span.set_attribute("memory_latency_ms", memory_latency_ms)
+            logger.info(
+                "Memory retrieval completed",
+                extra={
+                    "extra_data": {
+                        "session_id": session_id,
+                        "memory_latency_ms": memory_latency_ms,
+                    }
+                },
+            )
 
-        results = await self.react_loop.run(
-            provider=self.provider,
-            goal=goal,
-            context=context,
-        )
+            context = ExecutionContext(
+                session_id=session_id,
+                goal=goal,
+                memory=memory_context,
+            )
 
-        final_response = self.synthesize(goal, results)
+            results = await self.react_loop.run(
+                provider=self.provider,
+                goal=goal,
+                context=context,
+            )
 
-        # Store the exchange
-        history.add_user_message(goal)
-        history.add_ai_message(final_response)
+            final_response = self.synthesize(goal, results)
 
-        return final_response
+            # Store the exchange
+            history.add_user_message(goal)
+            history.add_ai_message(final_response)
+
+            duration_ms = round((time.perf_counter() - start_time) * 1000, 1)
+            span.set_attribute("orchestrator_latency_ms", duration_ms)
+            logger.info(
+                "Orchestration completed",
+                extra={
+                    "extra_data": {
+                        "session_id": session_id,
+                        "orchestrator_latency_ms": duration_ms,
+                    }
+                },
+            )
+
+            return final_response
 
     def synthesize(self, goal: str, results: list) -> str:
         """

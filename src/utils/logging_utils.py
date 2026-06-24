@@ -17,6 +17,7 @@ from logging.handlers import RotatingFileHandler
 from pathlib import Path
 from typing import Any  # Fixed: Added missing import
 
+from src.observability.tracing import get_span_id, get_trace_id
 from src.utils.log_filters import PIIRedactionFilter
 
 SERVICE_NAME = "em-ai-labs"
@@ -52,6 +53,8 @@ class StructuredFormatter(logging.Formatter):
             "logger": record.name,
             "message": _safe_message(record),
             "correlation_id": get_correlation_id() or "untracked",
+            "trace_id": get_trace_id() or "untracked",
+            "span_id": get_span_id() or "untracked",
             "log_version": 1,
             "service": SERVICE_NAME,
             "environment": ENVIRONMENT,

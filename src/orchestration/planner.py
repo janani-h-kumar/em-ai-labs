@@ -23,9 +23,11 @@ would have been a single-task plan anyway, never the reverse.
 import json
 import logging
 import re
+import time
 from typing import TypedDict
 from uuid import uuid4
 
+from src.observability.tracing import create_span
 from src.orchestration.models import ExecutionContext, Task
 from src.providers.base_provider import BaseLLMProvider
 
@@ -78,15 +80,35 @@ class Planner:
         self, provider: BaseLLMProvider, goal: str, context: ExecutionContext
     ) -> list[Task]:
         """Decompose a goal into executable tasks, skipping the LLM call when unnecessary."""
+        start_time = time.perf_counter()
 
-        if self._looks_single_intent(goal):
-            logger.debug(
-                "Planner heuristic: single-intent goal, skipping LLM planning call goal=%r",
-                goal,
+        with create_span(
+            "planner.create_plan",
+            session_id=context.session_id,
+            goal=goal,
+        ) as span:
+            if self._looks_single_intent(goal):
+                logger.debug(
+                    "Planner heuristic: single-intent goal, skipping LLM planning call goal=%r",
+                    goal,
+                )
+                span.set_attribute("planner.heuristic_skip", True)
+                steps: list[PlanStep] | None = None
+            else:
+                span.set_attribute("planner.heuristic_skip", False)
+                steps = await self._plan_via_llm(provider, goal, context)
+
+            duration_ms = round((time.perf_counter() - start_time) * 1000, 1)
+            span.set_attribute("planner_latency_ms", duration_ms)
+            logger.info(
+                "Planner completed",
+                extra={
+                    "extra_data": {
+                        "session_id": context.session_id,
+                        "planner_latency_ms": duration_ms,
+                    }
+                },
             )
-            steps: list[PlanStep] | None = None
-        else:
-            steps = await self._plan_via_llm(provider, goal, context)
 
         if steps is None:
             if not self._looks_single_intent(goal):

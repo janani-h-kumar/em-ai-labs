@@ -9,9 +9,9 @@ from dataclasses import dataclass
 
 from opentelemetry import trace as otel_trace
 
+from src.observability.tracing import create_span, tracer
 from src.orchestration.models import ExecutionContext, Task, TaskStatus
 from src.utils.logging_utils import get_correlation_id
-from src.utils.tracing import tracer
 
 logger = logging.getLogger(__name__)
 
@@ -28,7 +28,7 @@ class Executor:
 
     [Pillar 3] execute_task() is now wrapped in an OTel span. With no
     OTEL_EXPORTER_OTLP_ENDPOINT configured this has zero overhead (NoOp
-    tracer — see src/utils/tracing.py). With Jaeger configured, every task
+    tracer — see src/observability/tracing.py). With Jaeger configured, every task
     execution becomes a span carrying task id, agent name, session id,
     correlation id, and duration — exactly the breakdown needed to answer
     "where did the time go" instead of inferring it from log timestamps.
@@ -93,7 +93,18 @@ class Executor:
                 # Create agent instance on demand
                 agent = self.agent_registry.create_instance(agent_name)
 
-                result = await agent.handle(task, context)
+                with create_span(
+                    "agent.handle",
+                    agent_name=resolved_agent_name,
+                    task_id=task.id,
+                    session_id=context.session_id,
+                ) as agent_span:
+                    result = await agent.handle(task, context)
+                    agent_latency_ms = round((time.perf_counter() - start_time) * 1000, 1)
+                    agent_span.set_attribute("agent_latency_ms", agent_latency_ms)
+
+                task.status = TaskStatus.COMPLETED
+                task.result = result
 
                 task.status = TaskStatus.COMPLETED
                 task.result = result
