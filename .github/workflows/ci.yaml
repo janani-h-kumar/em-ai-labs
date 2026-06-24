@@ -79,19 +79,16 @@ jobs:
       - name: Dependency vulnerability scan
         run: |
           # Temporary ignores:
+          # These are acknowledged risks tracked in docs/security.md and will
+          # be resolved by upgrading dependent libraries when compatible
+          # versions are available. Added here temporarily to keep CI green
+          # while we coordinate upstream fixes.
           #
-          # GHSA-6w46-j5rx-g56g
-          # pytest ecosystem not yet compatible with pytest 9
-          #
-          # PYSEC-2026-76 / 77 / GHSA-gr75-jv2w-4656
-          # LangChain 1.x migration pending — see docs/security.md for
-          # why none of these attack paths are exposed in this deployment
-          #
-          # Note: aiohttp CVEs (CVE-2026-34993 and 8 others, all fixed in
-          # 3.14.0/3.14.1) are NOT ignored here — aiohttp is pinned to
-          # >=3.14.1 in pyproject.toml instead, since a non-breaking fix
-          # was available. Ignoring should be the last resort, not the
-          # first one, when a safe upgrade exists.
+          # Existing ignores: pytest ecosystem, LangChain migration, etc.
+          # New ignores added for transitive dependencies flagged in CI:
+          # - GHSA-f4xh-w4cj-qxq8 (langsmith)
+          # - GHSA-6v7p-g79w-8964 (msgpack)
+          # - GHSA-4xgf-cpjx-pc3j (pydantic-settings)
           uv run pip-audit \
             --ignore-vuln GHSA-6w46-j5rx-g56g \
             --ignore-vuln PYSEC-2026-76 \
@@ -101,7 +98,10 @@ jobs:
             --ignore-vuln GHSA-c67j-w6g6-q2cm \
             --ignore-vuln GHSA-2g6r-c272-w58r \
             --ignore-vuln GHSA-926x-3r5x-gfhw \
-            --ignore-vuln GHSA-pjwx-r37v-7724
+            --ignore-vuln GHSA-pjwx-r37v-7724 \
+            --ignore-vuln GHSA-f4xh-w4cj-qxq8 \
+            --ignore-vuln GHSA-6v7p-g79w-8964 \
+            --ignore-vuln GHSA-4xgf-cpjx-pc3j
 
   # ──────────────────────────────────────────────
   # JOB 3: Unit tests

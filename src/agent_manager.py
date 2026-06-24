@@ -13,7 +13,7 @@ import logging
 from pathlib import Path
 from typing import Any
 
-from src.agents.agent_registry import AgentRegistry
+from src.agents.agent_registry import AgentDescriptor, AgentRegistry
 from src.core.container import ServiceContainer
 from src.orchestration.orchestrator import Orchestrator
 from src.router import MessageRouter
@@ -63,10 +63,14 @@ class AgentManager:
             # Router
             # -------------------------------------------------
 
-            agent_capabilities = {
-                name: descriptor.capabilities
-                for name, descriptor in self.agent_registry.agents.items()
-            }
+            # Ensure agent_capabilities is typed as dict[str, list[str]]
+            agent_capabilities: dict[str, list[str]] = {}
+            for name, descriptor in self.agent_registry.agents.items():
+                if isinstance(descriptor, AgentDescriptor):
+                    caps = descriptor.capabilities or []
+                else:
+                    caps = getattr(descriptor, "capabilities", []) or []
+                agent_capabilities[name] = caps
 
             logger.info(
                 "Building router from agent metadata",

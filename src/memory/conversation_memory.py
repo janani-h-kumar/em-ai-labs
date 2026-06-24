@@ -7,6 +7,11 @@ from src.memory.base_memory import BaseMemory
 
 
 class InProcessMemory(BaseMemory):
+    """In-process memory backend for short-lived session state."""
+
+    name = "memory"
+    description = "In-process session memory backend"
+
     def __init__(self) -> None:
         self._history_store: dict[str, InMemoryChatMessageHistory] = {}
 
