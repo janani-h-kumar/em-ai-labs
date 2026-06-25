@@ -13,11 +13,14 @@ Changes from original:
 """
 
 import logging
+import time
 from typing import Any, TypedDict, cast
 
 import requests
+from opentelemetry import trace as otel_trace
 from openai import OpenAI
 
+from src.observability.tracing import create_span
 from src.providers.base_provider import BaseLLMProvider, HealthStatus
 
 logger = logging.getLogger(__name__)
@@ -29,6 +32,17 @@ class ModelEntry(TypedDict):
 
 class PsResponse(TypedDict, total=False):
     models: list[ModelEntry]
+
+
+def _usage_value(usage: object, key: str) -> int:
+    if usage is None:
+        return 0
+    try:
+        if isinstance(usage, dict):
+            return int(usage.get(key, 0) or 0)
+        return int(getattr(usage, key, 0) or 0)
+    except Exception:
+        return 0
 
 
 # ---------------------------------------------------------------------------
@@ -227,52 +241,78 @@ class OllamaClient(BaseLLMProvider):
         Raises:
             OllamaError: On API failure
         """
-        try:
-            if isinstance(messages, str):
-                messages = [{"role": "user", "content": messages}]
-            elif isinstance(messages, dict):
-                messages = [messages]
-            elif isinstance(messages, list):
-                messages = messages
-            else:
-                raise OllamaError(
-                    f"Invalid messages type {type(messages)}. Expected str, dict, or list."
-                )
-
-            logger.info("Sending %s message(s) to model: %s", len(messages), self.model)
-            request_kwargs = dict(model=self.model, messages=messages)
-            if max_tokens is not None:
-                request_kwargs["max_tokens"] = max_tokens
-            response = self.client.chat.completions.create(**request_kwargs)
-            result = str(response.choices[0].message.content)
-            token_usage = getattr(response, "usage", None)
-            if token_usage is not None:
-                try:
-                    prompt_tokens = int(token_usage.get("prompt_tokens", 0))
-                    completion_tokens = int(token_usage.get("completion_tokens", 0))
-                    total_tokens = int(token_usage.get("total_tokens", 0))
-                except Exception:
-                    prompt_tokens = completion_tokens = total_tokens = 0
-            else:
-                prompt_tokens = completion_tokens = total_tokens = 0
-
-            logger.info(
-                "Successfully received response from model",
-                extra={
-                    "extra_data": {
-                        "model_name": self.model,
-                        "prompt_tokens": prompt_tokens,
-                        "completion_tokens": completion_tokens,
-                        "total_tokens": total_tokens,
-                    }
-                },
+        if isinstance(messages, str):
+            normalised_messages = [{"role": "user", "content": messages}]
+        elif isinstance(messages, dict):
+            normalised_messages = [messages]
+        elif isinstance(messages, list):
+            normalised_messages = messages
+        else:
+            raise OllamaError(
+                f"Invalid messages type {type(messages)}. Expected str, dict, or list."
             )
-            return result
 
-        except OllamaError:
-            raise
-        except Exception as e:
-            raise OllamaError(f"Error calling model '{self.model}': {e}") from e
+        with create_span(
+            "llm.chat_completion",
+            llm_provider="ollama",
+            model_name=str(self.model),
+            message_count=len(normalised_messages),
+            max_tokens=max_tokens or 0,
+            has_system_prompt=system_prompt is not None,
+        ) as span:
+            start_time = time.perf_counter()
+            try:
+                if system_prompt:
+                    normalised_messages = [
+                        {"role": "system", "content": system_prompt},
+                        *normalised_messages,
+                    ]
+                    span.set_attribute("message_count", len(normalised_messages))
+
+                logger.info(
+                    "Sending %s message(s) to model: %s",
+                    len(normalised_messages),
+                    self.model,
+                )
+                request_kwargs = dict(model=self.model, messages=normalised_messages)
+                if max_tokens is not None:
+                    request_kwargs["max_tokens"] = max_tokens
+
+                response = self.client.chat.completions.create(**request_kwargs)
+                result = str(response.choices[0].message.content)
+                token_usage = getattr(response, "usage", None)
+                prompt_tokens = _usage_value(token_usage, "prompt_tokens")
+                completion_tokens = _usage_value(token_usage, "completion_tokens")
+                total_tokens = _usage_value(token_usage, "total_tokens")
+                duration_ms = round((time.perf_counter() - start_time) * 1000, 1)
+
+                span.set_attribute("llm_latency_ms", duration_ms)
+                span.set_attribute("prompt_tokens", prompt_tokens)
+                span.set_attribute("completion_tokens", completion_tokens)
+                span.set_attribute("total_tokens", total_tokens)
+
+                logger.info(
+                    "Successfully received response from model",
+                    extra={
+                        "extra_data": {
+                            "model_name": self.model,
+                            "llm_latency_ms": duration_ms,
+                            "prompt_tokens": prompt_tokens,
+                            "completion_tokens": completion_tokens,
+                            "total_tokens": total_tokens,
+                        }
+                    },
+                )
+                return result
+
+            except OllamaError:
+                raise
+            except Exception as e:
+                duration_ms = round((time.perf_counter() - start_time) * 1000, 1)
+                span.set_attribute("llm_latency_ms", duration_ms)
+                span.set_status(otel_trace.StatusCode.ERROR, str(e))
+                span.record_exception(e)
+                raise OllamaError(f"Error calling model '{self.model}': {e}") from e
 
     def health_check(self) -> HealthStatus:
         """Checks if the local Ollama instance is reachable."""

@@ -16,6 +16,12 @@ from typing import Any
 
 from src.agents.agent_registry import AgentDescriptor, AgentRegistry
 from src.core.container import ServiceContainer
+from src.guardrails import (
+    GuardrailViolation,
+    InputGuardrail,
+    load_guardrail_config,
+    mark_guardrail_violation,
+)
 from src.observability.tracing import create_span, increment_request_count
 from src.orchestration.orchestrator import Orchestrator
 from src.router import MessageRouter
@@ -52,6 +58,8 @@ class AgentManager:
 
             self.container = ServiceContainer(ConfigManager(config_path))
             self.container.config_manager.validate_startup()
+            self.guardrail_config = load_guardrail_config(self.container.config_manager)
+            self.input_guardrail = InputGuardrail(self.guardrail_config)
 
             # -------------------------------------------------
             # Agent Discovery
@@ -94,6 +102,7 @@ class AgentManager:
                 router=self.router,
                 provider=self.container.provider,
                 memory=self.container.memory,
+                guardrail_config=self.guardrail_config,
             )
 
             logger.info("AgentManager initialised successfully")
@@ -123,8 +132,24 @@ class AgentManager:
                 request_id=request_id,
                 session_id=request_id,
                 request_count=current_request,
-                message_length=len(message),
+                message_length=len(message) if isinstance(message, str) else 0,
             ) as span:
+                try:
+                    message = self.input_guardrail.validate_prompt(message)
+                except GuardrailViolation as e:
+                    mark_guardrail_violation(e)
+                    logger.warning(
+                        "Input guardrail blocked request",
+                        extra={
+                            "extra_data": {
+                                "request_id": request_id,
+                                "guardrail_code": e.code,
+                                **e.details,
+                            }
+                        },
+                    )
+                    return e.public_message
+
                 logger.info(
                     "Handling message",
                     extra={
@@ -155,6 +180,20 @@ class AgentManager:
                 )
 
                 return response
+
+        except GuardrailViolation as e:
+            mark_guardrail_violation(e)
+            logger.warning(
+                "Guardrail blocked request",
+                extra={
+                    "extra_data": {
+                        "request_id": request_id,
+                        "guardrail_code": e.code,
+                        **e.details,
+                    }
+                },
+            )
+            return e.public_message
 
         except Exception:
             logger.exception(

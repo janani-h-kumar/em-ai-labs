@@ -4,12 +4,15 @@ Integrated with BaseTool architectural pattern.
 """
 
 import logging
+import time
 from typing import cast
 
 import requests
+from opentelemetry import trace as otel_trace
 from pydantic import BaseModel, Field
 
 from src.middleware.circuit_breaker import CircuitBreaker
+from src.observability.tracing import create_span
 from src.tools.base_tool import BaseTool
 from src.utils.config_loader import ConfigManager
 
@@ -101,43 +104,67 @@ class WeatherClient:
         return cast(WeatherResult, result)
 
     def _fetch_weather(self, city: str, units: str) -> WeatherResult:
-        try:
-            logger.info("Fetching weather for city: %s", city)
-            response = requests.get(
-                f"{self.base_url}/weather",
-                params={"q": city, "units": units},
-                headers={"x-api-key": self.api_key, "appid": self.api_key},
-                timeout=5,
-            )
+        with create_span(
+            "tool.api_request",
+            tool_name="weather_tool",
+            api_service="openweathermap",
+            http_method="GET",
+            url=f"{self.base_url}/weather",
+            city=city,
+            units=units,
+        ) as span:
+            start_time = time.perf_counter()
+            try:
+                logger.info("Fetching weather for city: %s", city)
+                response = requests.get(
+                    f"{self.base_url}/weather",
+                    params={"q": city, "units": units},
+                    headers={"x-api-key": self.api_key, "appid": self.api_key},
+                    timeout=5,
+                )
+                duration_ms = round((time.perf_counter() - start_time) * 1000, 1)
+                span.set_attribute("http.status_code", response.status_code)
+                span.set_attribute("api_latency_ms", duration_ms)
 
-            if response.status_code == 404:
-                raise CityNotFoundError(f"City '{city}' not found")
-            elif response.status_code == 401:
-                raise WeatherAPIError("Invalid OpenWeatherMap API key.")
-            elif response.status_code != 200:
-                raise WeatherAPIError(f"Weather API error {response.status_code}")
+                if response.status_code == 404:
+                    raise CityNotFoundError(f"City '{city}' not found")
+                elif response.status_code == 401:
+                    raise WeatherAPIError("Invalid OpenWeatherMap API key.")
+                elif response.status_code != 200:
+                    raise WeatherAPIError(f"Weather API error {response.status_code}")
 
-            data = response.json()
-            return WeatherResult(
-                city=data.get("name"),
-                country=data.get("sys", {}).get("country"),
-                temperature=data.get("main", {}).get("temp"),
-                feels_like=data.get("main", {}).get("feels_like"),
-                humidity=data.get("main", {}).get("humidity"),
-                pressure=data.get("main", {}).get("pressure"),
-                condition=data.get("weather", [{}])[0].get("main"),
-                description=data.get("weather", [{}])[0].get("description"),
-                units=units,
-            )
-        except (CityNotFoundError, WeatherAPIError):
-            raise
-        except requests.Timeout as e:
-            # FIXED B904: Added explicit exception chaining via 'from e'
-            raise WeatherAPIError(f"Weather API request for '{city}' timed out") from e
-        except requests.RequestException as e:
-            raise WeatherAPIError(f"Error fetching weather data: {e}") from e
-        except (KeyError, ValueError) as e:
-            raise WeatherAPIError(f"Error parsing weather API response: {e}") from e
+                data = response.json()
+                return WeatherResult(
+                    city=data.get("name"),
+                    country=data.get("sys", {}).get("country"),
+                    temperature=data.get("main", {}).get("temp"),
+                    feels_like=data.get("main", {}).get("feels_like"),
+                    humidity=data.get("main", {}).get("humidity"),
+                    pressure=data.get("main", {}).get("pressure"),
+                    condition=data.get("weather", [{}])[0].get("main"),
+                    description=data.get("weather", [{}])[0].get("description"),
+                    units=units,
+                )
+            except (CityNotFoundError, WeatherAPIError) as e:
+                span.set_status(otel_trace.StatusCode.ERROR, str(e))
+                raise
+            except requests.Timeout as e:
+                duration_ms = round((time.perf_counter() - start_time) * 1000, 1)
+                span.set_attribute("api_latency_ms", duration_ms)
+                span.set_status(otel_trace.StatusCode.ERROR, str(e))
+                span.record_exception(e)
+                # FIXED B904: Added explicit exception chaining via 'from e'
+                raise WeatherAPIError(f"Weather API request for '{city}' timed out") from e
+            except requests.RequestException as e:
+                duration_ms = round((time.perf_counter() - start_time) * 1000, 1)
+                span.set_attribute("api_latency_ms", duration_ms)
+                span.set_status(otel_trace.StatusCode.ERROR, str(e))
+                span.record_exception(e)
+                raise WeatherAPIError(f"Error fetching weather data: {e}") from e
+            except (KeyError, ValueError) as e:
+                span.set_status(otel_trace.StatusCode.ERROR, str(e))
+                span.record_exception(e)
+                raise WeatherAPIError(f"Error parsing weather API response: {e}") from e
 
 
 # --- 3. The LangChain Framework Agent Tool Wrapper ---
@@ -172,5 +199,22 @@ class WeatherTool(BaseTool):
         if not city:
             raise ValueError("City parameter is required.")
 
-        # Execute via the local initialized client instance
-        return self.client.get_temperature(city=city, units=units)
+        with create_span(
+            "tool.execute",
+            tool_name=self.name,
+            operation="get_temperature",
+            city=city,
+            units=units,
+        ) as span:
+            start_time = time.perf_counter()
+            try:
+                result = self.client.get_temperature(city=city, units=units)
+                duration_ms = round((time.perf_counter() - start_time) * 1000, 1)
+                span.set_attribute("tool_latency_ms", duration_ms)
+                return result
+            except Exception as e:
+                duration_ms = round((time.perf_counter() - start_time) * 1000, 1)
+                span.set_attribute("tool_latency_ms", duration_ms)
+                span.set_status(otel_trace.StatusCode.ERROR, str(e))
+                span.record_exception(e)
+                raise

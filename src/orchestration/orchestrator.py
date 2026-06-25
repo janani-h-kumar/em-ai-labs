@@ -62,12 +62,8 @@ class Orchestrator:
             session_id=session_id,
             goal=goal,
         ) as span:
-            history = self.memory.get_history(session_id)
             memory_start = time.perf_counter()
-            memory_context = [
-                {"role": m.type, "content": m.content}
-                for m in history.messages[-6:]  # last 3 turns for context window
-            ]
+            history = self.memory.get_history(session_id)
             memory_latency_ms = round((time.perf_counter() - memory_start) * 1000, 1)
             span.set_attribute("memory_latency_ms", memory_latency_ms)
             logger.info(
@@ -79,6 +75,10 @@ class Orchestrator:
                     }
                 },
             )
+            memory_context = [
+                {"role": m.type, "content": m.content}
+                for m in history.messages[-6:]  # last 3 turns for context window
+            ]
 
             context = ExecutionContext(
                 session_id=session_id,

@@ -106,9 +106,6 @@ class Executor:
                 task.status = TaskStatus.COMPLETED
                 task.result = result
 
-                task.status = TaskStatus.COMPLETED
-                task.result = result
-
                 context.completed_tasks[task.id] = result
 
                 duration_ms = round((time.perf_counter() - start_time) * 1000, 1)
