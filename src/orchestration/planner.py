@@ -27,6 +27,8 @@ import time
 from typing import TypedDict
 from uuid import uuid4
 
+from src.guardrails import mark_guardrail_violation
+from src.guardrails.exceptions import GuardrailViolationError
 from src.observability.tracing import create_span
 from src.orchestration.models import ExecutionContext, Task
 from src.providers.base_provider import BaseLLMProvider
@@ -236,7 +238,25 @@ class Planner:
             text = array_match.group(0)
 
         try:
+            plan = self._output_guardrail.validate_planner_json(
+                text,
+            )
+        except GuardrailViolationError as e:
+            mark_guardrail_violation(e)
+            logger.warning(
+                "Output guardrail blocked plan response",
+                extra={
+                    "extra_data": {
+                        "guardrail_code": e.code,
+                        **e.details,
+                    }
+                },
+            )
+            return None
+
+        try:
             parsed = json.loads(text)
+
         except json.JSONDecodeError:
             return None
 

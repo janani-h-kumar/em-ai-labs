@@ -1,9 +1,8 @@
 from fastapi import FastAPI
-
-from src.agent_manager import AgentManager
+from src.application_service import ApplicationService
 
 app = FastAPI()
-manager = AgentManager()
+manager = ApplicationService()
 
 
 @app.get("/health")

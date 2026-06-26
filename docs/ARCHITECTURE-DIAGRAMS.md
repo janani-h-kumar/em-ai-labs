@@ -10,7 +10,7 @@ graph TB
 
     subgraph "Application Layer"
         Main["🚀 main.py<br/>CLI Entry Point"]
-        Manager["📦 AgentManager<br/>Composition Root"]
+        Manager["📦 ApplicationService<br/>Composition Root"]
     end
 
     subgraph "Orchestration Core"
@@ -82,7 +82,7 @@ graph TB
 sequenceDiagram
     actor User
     participant Main as main.py
-    participant Manager as AgentManager
+    participant Manager as ApplicationService
     participant Orch as Orchestrator
     participant ReACT as ReACTLoop
     participant Plan as Planner
@@ -175,7 +175,7 @@ graph LR
     end
 
     subgraph "Router Initialization"
-        E["AgentManager<br/>builds router"]
+        E["ApplicationService<br/>builds router"]
         E -->|"read agent metadata"| F["Create agent_capabilities<br/>dict from classes"]
         F -->|"pass to Router"| G["Router stores<br/>keyword patterns<br/>by capability"]
     end
@@ -245,7 +245,7 @@ graph TD
                        │
                        ▼
 ┌─────────────────────────────────────────────────────────────────┐
-│                    AgentManager.handle()                         │
+│                    ApplicationService.handle()                         │
 │  ┌───────────────────────────────────────────────────────────┐  │
 │  │ • Set correlation_id for tracing                          │  │
 │  │ • Log request metadata (length, id)                       │  │
@@ -405,8 +405,8 @@ context.completed_tasks["task-001"] = "It's 72°F and sunny in Seattle"
 
 | Source | Target | Data Passed | When |
 |--------|--------|-------------|------|
-| User | AgentManager | `goal: str` | On each request |
-| AgentManager | Orchestrator | `goal, session_id` | Request start |
+| User | ApplicationService | `goal: str` | On each request |
+| ApplicationService | Orchestrator | `goal, session_id` | Request start |
 | Orchestrator | ReACTLoop | `provider, goal, context` | Plan execution |
 | ReACTLoop | Planner | `goal, reasoning` | Each cycle |
 | Planner | ReACTLoop | `Task[]` | After planning |

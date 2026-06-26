@@ -18,21 +18,6 @@ class GuardrailConfig:
     max_execution_seconds: int = 60
 
 
-class GuardrailViolation(Exception):
-    """Raised when a known guardrail prevents unsafe execution."""
-
-    def __init__(
-        self,
-        code: str,
-        public_message: str,
-        details: dict[str, Any] | None = None,
-    ) -> None:
-        self.code = code
-        self.public_message = public_message
-        self.details = details or {}
-        super().__init__(f"{code}: {public_message}")
-
-
 def load_guardrail_config(config_manager: Any | None = None) -> GuardrailConfig:
     """Load guardrail limits from YAML with env overrides."""
 
@@ -69,7 +54,7 @@ def load_guardrail_config(config_manager: Any | None = None) -> GuardrailConfig:
 
 
 def mark_guardrail_violation(
-    violation: GuardrailViolation,
+    violation: GuardrailViolationError,
     limit: int | float | None = None,
 ) -> None:
     """Annotate the active span with guardrail metadata when tracing is enabled."""
@@ -102,6 +87,7 @@ def _get_int(
     return value if value > 0 else default
 
 
+from src.guardrails.exceptions import GuardrailViolationError
 from src.guardrails.execution_guardrail import ExecutionGuardrail
 from src.guardrails.input_guardrail import InputGuardrail
 from src.guardrails.output_guardrail import OutputGuardrail
@@ -109,7 +95,7 @@ from src.guardrails.output_guardrail import OutputGuardrail
 __all__ = [
     "ExecutionGuardrail",
     "GuardrailConfig",
-    "GuardrailViolation",
+    "GuardrailViolationError",
     "InputGuardrail",
     "OutputGuardrail",
     "load_guardrail_config",

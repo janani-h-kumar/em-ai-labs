@@ -2,7 +2,11 @@ from __future__ import annotations
 
 from typing import Any
 
-from src.guardrails import GuardrailConfig, GuardrailViolation, mark_guardrail_violation
+from src.guardrails import (
+    GuardrailConfig,
+    mark_guardrail_violation,
+)
+from src.guardrails.exceptions import GuardrailViolationError
 
 
 class OutputGuardrail:
@@ -20,7 +24,7 @@ class OutputGuardrail:
         if text:
             return text
 
-        violation = GuardrailViolation(
+        violation = GuardrailViolationError(
             code="output.empty_response",
             public_message="I could not produce a useful response for that request.",
         )
@@ -67,7 +71,7 @@ class OutputGuardrail:
         return steps
 
     def _mark_malformed(self, raw: object) -> None:
-        violation = GuardrailViolation(
+        violation = GuardrailViolationError(
             code="output.malformed_planner_json",
             public_message="The local model returned an invalid plan, so I used a safe fallback.",
             details={"raw_type": type(raw).__name__},

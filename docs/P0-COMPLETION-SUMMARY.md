@@ -31,7 +31,7 @@ class GeneralAgent(BaseAgent):
 - Implements full `BaseAgent` contract
 - Ready for dependency injection
 
-### 2. Fixed AgentManager Router Initialization (`src/agent_manager.py`)
+### 2. Fixed ApplicationService Router Initialization (`src/application_service.py`)
 ```python
 # Build router from discovered agent metadata
 agent_capabilities = {
@@ -57,8 +57,8 @@ def get(self, name: str):
 
 ### Tests Added
 1. **test_registry_factory.py::test_registry_get_alias_returns_instance** — Validates alias method
-2. **test_agent_manager_router.py::test_agent_manager_builds_router_from_agent_metadata** — Verifies router builds from agent metadata
-3. **test_agent_manager_router.py::test_agent_manager_router_handles_fallback_correctly** — Confirms fallback routing works
+2. **test_application_service_router.py::test_application_service_builds_router_from_agent_metadata** — Verifies router builds from agent metadata
+3. **test_application_service_router.py::test_application_service_router_handles_fallback_correctly** — Confirms fallback routing works
 4. **test_general_fallback_flow.py::test_executor_routes_and_creates_general_agent** — End-to-end executor flow
 5. **test_general_fallback_flow.py::test_full_flow_general_agent_discovery_to_execution** — Full bootstrap → routing → execution
 
@@ -70,9 +70,9 @@ def get(self, name: str):
 
 ### Key Files Modified
 - `src/agents/general_agent.py` — NEW
-- `src/agent_manager.py` — Router initialization from agent metadata
+- `src/application_service.py` — Router initialization from agent metadata
 - `src/agents/agent_registry.py` — Added `get()` compatibility alias
-- `tests/unit/test_agent_manager_router.py` — NEW
+- `tests/unit/test_application_service_router.py` — NEW
 - `tests/unit/test_general_fallback_flow.py` — NEW
 - `tests/unit/test_registry_factory.py` — Added alias test
 - `PLAN.md` — Updated P0 completion status
@@ -98,7 +98,7 @@ Registry stores: {
 
 ### 2. Router Initialization
 ```
-AgentManager.__init__()
+ApplicationService.__init__()
   ↓
 Build agent_capabilities from registry.agents
   ↓

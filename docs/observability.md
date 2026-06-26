@@ -9,7 +9,7 @@ file and inspected without sending data to a hosted service.
 A normal request produces a trace shaped like this:
 
 ```text
-agent_manager.handle
+application_service.handle
   orchestrator.run
     planner.create_plan
       llm.chat_completion
@@ -26,7 +26,7 @@ decides the request is compound enough to ask the local model for a plan.
 
 ## Span Attributes
 
-`agent_manager.handle` captures request-level metadata:
+`application_service.handle` captures request-level metadata:
 
 ```text
 request_id

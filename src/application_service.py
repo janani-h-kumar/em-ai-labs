@@ -17,11 +17,11 @@ from typing import Any
 from src.agents.agent_registry import AgentDescriptor, AgentRegistry
 from src.core.container import ServiceContainer
 from src.guardrails import (
-    GuardrailViolation,
     InputGuardrail,
     load_guardrail_config,
     mark_guardrail_violation,
 )
+from src.guardrails.exceptions import GuardrailViolationError
 from src.observability.tracing import create_span, increment_request_count
 from src.orchestration.orchestrator import Orchestrator
 from src.router import MessageRouter
@@ -37,7 +37,7 @@ setup_structured_logging()
 logger = logging.getLogger(__name__)
 
 
-class AgentManager:
+class ApplicationService:
     """
     Enterprise application manager for orchestration lifecycle.
     """
@@ -105,12 +105,12 @@ class AgentManager:
                 guardrail_config=self.guardrail_config,
             )
 
-            logger.info("AgentManager initialised successfully")
+            logger.info("ApplicationService initialised successfully")
 
             self._initialized = True
 
         except Exception as e:
-            logger.exception("Failed to initialise AgentManager")
+            logger.exception("Failed to initialise ApplicationService")
 
             raise e
 
@@ -128,7 +128,7 @@ class AgentManager:
             current_request = increment_request_count()
             start_time = time.perf_counter()
             with create_span(
-                "agent_manager.handle",
+                "application_service.handle",
                 request_id=request_id,
                 session_id=request_id,
                 request_count=current_request,
@@ -136,7 +136,7 @@ class AgentManager:
             ) as span:
                 try:
                     message = self.input_guardrail.validate_prompt(message)
-                except GuardrailViolation as e:
+                except GuardrailViolationError as e:
                     mark_guardrail_violation(e)
                     logger.warning(
                         "Input guardrail blocked request",
@@ -181,7 +181,7 @@ class AgentManager:
 
                 return response
 
-        except GuardrailViolation as e:
+        except GuardrailViolationError as e:
             mark_guardrail_violation(e)
             logger.warning(
                 "Guardrail blocked request",
@@ -234,7 +234,7 @@ class AgentManager:
 
 async def _main():
 
-    manager = AgentManager()
+    manager = ApplicationService()
 
     # Example: handle a generic request — routing decides the appropriate agent.
     response = await manager.handle("Provide a short summary about today's events.")

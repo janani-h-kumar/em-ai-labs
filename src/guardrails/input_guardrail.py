@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from src.guardrails import GuardrailConfig, GuardrailViolation, mark_guardrail_violation
+from src.guardrails import GuardrailConfig, mark_guardrail_violation
+from src.guardrails.exceptions import GuardrailViolationError
 
 
 class InputGuardrail:
@@ -11,7 +12,7 @@ class InputGuardrail:
 
     def validate_prompt(self, prompt: str) -> str:
         if not isinstance(prompt, str) or not prompt.strip():
-            violation = GuardrailViolation(
+            violation = GuardrailViolationError(
                 code="input.empty_prompt",
                 public_message="Please enter a prompt so I know what to help with.",
             )
@@ -20,7 +21,7 @@ class InputGuardrail:
 
         stripped = prompt.strip()
         if len(stripped) > self.config.max_prompt_chars:
-            violation = GuardrailViolation(
+            violation = GuardrailViolationError(
                 code="input.prompt_too_long",
                 public_message=(
                     "That prompt is too long for this local run. Please shorten it and try again."

@@ -6,7 +6,7 @@ import asyncio
 import logging
 import time
 
-from src.agent_manager import AgentManager
+from src.application_service import ApplicationService
 from src.utils.logging_utils import setup_structured_logging
 
 # Setup structured logging — must happen before any logger.getLogger() calls
@@ -23,7 +23,7 @@ async def run_interactive_chat():
 
     try:
         startup_start = time.perf_counter()
-        manager = AgentManager()
+        manager = ApplicationService()
         logger.info(
             "Application startup complete",
             extra={"startup_duration_sec": round(time.perf_counter() - startup_start, 2)},

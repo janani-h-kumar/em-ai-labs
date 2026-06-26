@@ -1,14 +1,14 @@
 """
-Test AgentManager router initialization from agent metadata.
+Test ApplicationService router initialization from agent metadata.
 """
 
 from unittest.mock import Mock, patch
 
 
-def test_agent_manager_builds_router_from_agent_metadata():
-    """Verify AgentManager builds router from agent registry capabilities."""
+def test_application_service_builds_router_from_agent_metadata():
+    """Verify ApplicationService builds router from agent registry capabilities."""
 
-    with patch("src.agent_manager.ServiceContainer") as mock_container_class:
+    with patch("src.application_service.ServiceContainer") as mock_container_class:
         # Mock container to avoid initializing real providers/tools
         mock_container = Mock()
         mock_container.config_manager = Mock()
@@ -18,8 +18,8 @@ def test_agent_manager_builds_router_from_agent_metadata():
 
         mock_container_class.return_value = mock_container
 
-        with patch("src.agent_manager.ConfigManager"):
-            with patch("src.agent_manager.AgentRegistry") as mock_registry_class:
+        with patch("src.application_service.ConfigManager"):
+            with patch("src.application_service.AgentRegistry") as mock_registry_class:
                 # Mock AgentRegistry to return test agents
                 mock_registry = Mock()
 
@@ -39,11 +39,11 @@ def test_agent_manager_builds_router_from_agent_metadata():
 
                 mock_registry_class.return_value = mock_registry
 
-                with patch("src.agent_manager.Orchestrator"):
-                    from src.agent_manager import AgentManager
+                with patch("src.application_service.Orchestrator"):
+                    from src.application_service import ApplicationService
 
-                    # Initialize AgentManager (this will build router)
-                    manager = AgentManager()
+                    # Initialize ApplicationService (this will build router)
+                    manager = ApplicationService()
 
                     # Verify router was created with agent capabilities
                     assert manager.router is not None
@@ -54,10 +54,10 @@ def test_agent_manager_builds_router_from_agent_metadata():
                     assert "weather_agent" in manager.router.agent_patterns
 
 
-def test_agent_manager_router_handles_fallback_correctly():
+def test_application_service_router_handles_fallback_correctly():
     """Verify router returns 'general' fallback when no specific agent matches."""
 
-    with patch("src.agent_manager.ServiceContainer") as mock_container_class:
+    with patch("src.application_service.ServiceContainer") as mock_container_class:
         mock_container = Mock()
         mock_container.config_manager = Mock()
         mock_container.provider = Mock()
@@ -66,8 +66,8 @@ def test_agent_manager_router_handles_fallback_correctly():
 
         mock_container_class.return_value = mock_container
 
-        with patch("src.agent_manager.ConfigManager"):
-            with patch("src.agent_manager.AgentRegistry") as mock_registry_class:
+        with patch("src.application_service.ConfigManager"):
+            with patch("src.application_service.AgentRegistry") as mock_registry_class:
                 mock_registry = Mock()
 
                 class MockGeneralAgent:
@@ -85,10 +85,10 @@ def test_agent_manager_router_handles_fallback_correctly():
 
                 mock_registry_class.return_value = mock_registry
 
-                with patch("src.agent_manager.Orchestrator"):
-                    from src.agent_manager import AgentManager
+                with patch("src.application_service.Orchestrator"):
+                    from src.application_service import ApplicationService
 
-                    manager = AgentManager()
+                    manager = ApplicationService()
 
                     # Route a message that doesn't match specific agents
                     agent, confidence = manager.router.route_message("hello there")

@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import time
 
-from src.guardrails import GuardrailConfig, GuardrailViolation, mark_guardrail_violation
+from src.guardrails import GuardrailConfig, mark_guardrail_violation
+from src.guardrails.exceptions import GuardrailViolationError
 
 
 class ExecutionGuardrail:
@@ -21,7 +22,7 @@ class ExecutionGuardrail:
         if iteration <= self.config.max_react_iterations:
             return
 
-        violation = GuardrailViolation(
+        violation = GuardrailViolationError(
             code="execution.max_iterations_exceeded",
             public_message=(
                 "I stopped this run because it reached the maximum number of reasoning steps."
@@ -39,7 +40,7 @@ class ExecutionGuardrail:
         if elapsed_seconds <= self.config.max_execution_seconds:
             return
 
-        violation = GuardrailViolation(
+        violation = GuardrailViolationError(
             code="execution.max_time_exceeded",
             public_message="I stopped this run because it took too long for the local runtime.",
             details={

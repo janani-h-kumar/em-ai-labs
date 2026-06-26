@@ -3,6 +3,7 @@ ReACT orchestration loop.
 """
 
 import logging
+import time
 from typing import Any
 
 from src.orchestration.task_graph import TaskGraph
@@ -41,6 +42,7 @@ class ReACTLoop:
         reasoning_interval: int = 1,
         max_reasoning_tokens: int = 64,
     ):
+        start_time = time.monotonic()
         """
         Execute iterative reasoning loop.
         """

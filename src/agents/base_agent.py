@@ -119,7 +119,7 @@ class BaseAgent(ABC):
 
         Args:
             config_manager: Fully loaded ConfigManager instance.
-                            Build it once in main.py / AgentManager and
+                            Build it once in main.py / ApplicationService and
                             pass it to every agent that needs it.
 
         Raises:

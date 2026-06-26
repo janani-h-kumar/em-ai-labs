@@ -5,6 +5,7 @@ Main orchestration engine.
 import logging
 import time
 
+from src.memory.base_memory import BaseMemory
 from src.observability.tracing import create_span
 from src.orchestration.executor import Executor
 from src.orchestration.models import ExecutionContext
@@ -20,11 +21,19 @@ class Orchestrator:
     Coordinates planning, execution, and synthesis.
     """
 
-    def __init__(self, agent_registry, router, provider: BaseLLMProvider, memory):
+    def __init__(
+        self,
+        agent_registry,
+        router,
+        provider: BaseLLMProvider,
+        memory: BaseMemory,
+        guardrail_config,
+    ):
         self.agent_registry = agent_registry
         self.router = router
         self.provider: BaseLLMProvider = provider
-        self.memory = memory
+        self.memory: BaseMemory = memory
+        self.guardrail_config = guardrail_config
 
         self.planner = Planner()
 

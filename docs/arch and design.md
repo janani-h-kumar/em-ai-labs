@@ -34,7 +34,7 @@ The architecture is organized around clean separation of concerns:
 ```text
 +---------------------------------------------------------+
 |                     Application Entry                    |
-|                main.py / AgentManager                    |
+|                main.py / ApplicationService              |
 +---------------------------+-----------------------------+
                             |
                             v
@@ -113,9 +113,9 @@ The container should:
 
 # Main Components
 
-## AgentManager
+## ApplicationService
 
-File: `src/agent_manager.py`
+File: `src/application_service.py`
 
 Top-level application coordinator.
 
@@ -443,7 +443,7 @@ Add:
 ```mermaid
 classDiagram
 
-class AgentManager
+class ApplicationService
 
 class MessageRouter {
   +route_message()
@@ -513,9 +513,9 @@ class Executor
 class CircuitBreaker
 class Retry
 
-AgentManager --> MessageRouter
-AgentManager --> AgentRegistry
-AgentManager --> AgentFactory
+ApplicationService --> MessageRouter
+ApplicationService --> AgentRegistry
+ApplicationService --> AgentFactory
 
 MessageRouter --> AgentRegistry
 AgentFactory --> ServiceContainer

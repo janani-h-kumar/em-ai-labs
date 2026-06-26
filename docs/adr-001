@@ -20,7 +20,7 @@ Its purpose is to:
 
 Example:
 
-AgentManager
+ApplicationService
 → ServiceContainer
 → Provider
 → ToolRegistry
@@ -48,7 +48,7 @@ The ServiceContainer is an infrastructure concern, not a business logic concern.
 
 Only infrastructure layers should know about it:
 
-✓ AgentManager
+✓ ApplicationService
 
 ✓ AgentRegistry
 
@@ -127,7 +127,7 @@ The container should be created once during application startup and passed only 
 
 The dependency flow should be:
 
-AgentManager
+ApplicationService
 → ServiceContainer
 → AgentFactory
 → Agent
