@@ -10,9 +10,11 @@ import json
 import logging
 import os
 import threading
+from collections.abc import Sequence
 from pathlib import Path
 from typing import Any
 
+from dotenv import load_dotenv
 from opentelemetry import trace
 from opentelemetry.sdk.resources import Resource
 from opentelemetry.sdk.trace import TracerProvider
@@ -22,7 +24,6 @@ from opentelemetry.sdk.trace.export import (
     SpanExporter,
     SpanExportResult,
 )
-from dotenv import load_dotenv
 
 logger = logging.getLogger(__name__)
 
@@ -47,7 +48,7 @@ class JsonlSpanExporter(SpanExporter):
         self.file_path.parent.mkdir(parents=True, exist_ok=True)
         self._lock = threading.Lock()
 
-    def export(self, spans: list[ReadableSpan]) -> SpanExportResult:
+    def export(self, spans: Sequence[ReadableSpan]) -> SpanExportResult:
         try:
             with self._lock:
                 with self.file_path.open("a", encoding="utf-8") as trace_file:
@@ -66,10 +67,12 @@ class JsonlSpanExporter(SpanExporter):
 def _span_to_json(span: ReadableSpan) -> dict[str, Any]:
     context = span.get_span_context()
     parent = span.parent
+    trace_id = format(context.trace_id, "032x") if context is not None else None
+    span_id = format(context.span_id, "016x") if context is not None else None
     return {
         "name": span.name,
-        "trace_id": format(context.trace_id, "032x"),
-        "span_id": format(context.span_id, "016x"),
+        "trace_id": trace_id,
+        "span_id": span_id,
         "parent_span_id": format(parent.span_id, "016x") if parent else None,
         "start_time_unix_nano": span.start_time,
         "end_time_unix_nano": span.end_time,

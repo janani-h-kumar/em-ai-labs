@@ -75,7 +75,7 @@ class LangChainRuntime(BaseRuntime):
             self.conversational_memory = memory or InProcessMemory()
 
             ollama_base_url = config_manager.get("env.OLLAMA_BASE_URL", "http://localhost:11434")
-            ollama_model = config_manager.get("env.LLM_MODEL", default="llama3.1")
+            ollama_model = config_manager.get("env.LLM_MODEL", default="qwen3:4b")
 
             # FIXED G004: Converted to lazy formatting
             logger.info("Initialising ChatOllama with model: %s", ollama_model)

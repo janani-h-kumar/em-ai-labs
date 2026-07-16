@@ -18,39 +18,21 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class RouteResult:
+    """Legacy alias — use RoutingResult from router.py for new code."""
+
     agent_name: str
     confidence: float
 
 
 class Executor:
-    """
-    Executes orchestration tasks.
+    """Executes orchestration tasks with OTel instrumentation."""
 
-    [Pillar 3] execute_task() is now wrapped in an OTel span. With no
-    OTEL_EXPORTER_OTLP_ENDPOINT configured this has zero overhead (NoOp
-    tracer — see src/observability/tracing.py). With Jaeger configured, every task
-    execution becomes a span carrying task id, agent name, session id,
-    correlation id, and duration — exactly the breakdown needed to answer
-    "where did the time go" instead of inferring it from log timestamps.
-    """
-
-    def __init__(
-        self,
-        agent_registry,
-        router,
-    ):
+    def __init__(self, agent_registry, router) -> None:
         self.agent_registry = agent_registry
         self.router = router
 
-    async def execute_task(
-        self,
-        task: Task,
-        context: ExecutionContext,
-    ):
-        """
-        Execute a single task.
-        """
-
+    async def execute_task(self, task: Task, context: ExecutionContext):
+        """Execute a single task."""
         with tracer.start_as_current_span("executor.execute_task") as span:
             span.set_attribute("task.id", task.id)
             span.set_attribute("task.description", task.description[:200])
@@ -63,12 +45,7 @@ class Executor:
 
             logger.info(
                 "Executing task",
-                extra={
-                    "extra_data": {
-                        "task_id": task.id,
-                        "description": task.description,
-                    }
-                },
+                extra={"extra_data": {"task_id": task.id, "description": task.description}},
             )
 
             task.status = TaskStatus.RUNNING
@@ -77,20 +54,26 @@ class Executor:
                 agent_name = task.assigned_agent
 
                 if not agent_name:
-                    routed = self.router.route_task(task)
+                    # route_task now returns RoutingResult — extract agent_name
+                    # and carry full routing metadata into the span for observability.
+                    routing = self.router.route_task(task)
 
-                    # route_task may return (agent, confidence) or agent string
-                    if isinstance(routed, tuple):
-                        agent_name = routed[0]
+                    # Support both RoutingResult (new) and tuple[str,float] (old)
+                    if hasattr(routing, "agent_name"):
+                        agent_name = routing.agent_name
+                        span.set_attribute("routing.confidence", routing.confidence)
+                        matched = getattr(routing, "matched_capabilities", [])
+                        if matched:
+                            span.set_attribute("routing.matched_capabilities", str(matched))
+                    elif isinstance(routing, tuple):
+                        agent_name = routing[0]
+                        span.set_attribute("routing.confidence", routing[1])
                     else:
-                        agent_name = routed
+                        agent_name = str(routing)
 
-                # Narrow to str for mypy — routing always resolves a name;
-                # if it didn't, create_instance() would raise immediately after.
                 resolved_agent_name: str = agent_name or ""
                 span.set_attribute("agent.name", resolved_agent_name)
 
-                # Create agent instance on demand
                 agent = self.agent_registry.create_instance(agent_name)
 
                 with create_span(
@@ -105,7 +88,6 @@ class Executor:
 
                 task.status = TaskStatus.COMPLETED
                 task.result = result
-
                 context.completed_tasks[task.id] = result
 
                 duration_ms = round((time.perf_counter() - start_time) * 1000, 1)
@@ -134,25 +116,12 @@ class Executor:
 
                 logger.exception(
                     "Task execution failed",
-                    extra={
-                        "extra_data": {
-                            "task_id": task.id,
-                            "duration_ms": duration_ms,
-                        }
-                    },
+                    extra={"extra_data": {"task_id": task.id, "duration_ms": duration_ms}},
                 )
 
                 task.status = TaskStatus.FAILED
+                raise
 
-                raise e
-
-    async def execute_parallel(
-        self,
-        tasks: list[Task],
-        context: ExecutionContext,
-    ):
-        """
-        Execute tasks concurrently.
-        """
-
+    async def execute_parallel(self, tasks: list[Task], context: ExecutionContext):
+        """Execute tasks concurrently."""
         return await asyncio.gather(*[self.execute_task(task, context) for task in tasks])

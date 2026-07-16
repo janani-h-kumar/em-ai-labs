@@ -6,6 +6,9 @@ import logging
 import time
 from typing import Any
 
+from src.guardrails import GuardrailConfig, mark_guardrail_violation
+from src.guardrails.exceptions import GuardrailViolationError
+from src.guardrails.execution_guardrail import ExecutionGuardrail
 from src.orchestration.task_graph import TaskGraph
 
 logger = logging.getLogger(__name__)
@@ -15,21 +18,16 @@ class ReACTLoop:
     """
     Iterative reasoning and execution loop.
 
-    Initial implementation is intentionally lightweight.
+    Reasoning is gated: a single-task plan on iteration 1 has no prior
+    observations to react to, so the reasoning LLM call is skipped. Reasoning
+    fires when the plan has more than one task (real sequencing decisions exist)
+    or once iteration 2+ is reached (real prior results exist to react to).
 
-    [Latency optimisation] Reasoning is now gated on whether there's
-    anything to reason about — a single-task plan on its first iteration
-    has no prior observations to react to, so the reasoning LLM call adds
-    latency without changing behaviour. Reasoning still fires whenever the
-    plan has more than one task (real sequencing decisions exist) or once
-    iteration 2+ is reached (real prior results exist to react to).
+    Execution is guarded by ExecutionGuardrail — both max iteration count
+    and max wall-clock time are checked on every iteration.
     """
 
-    def __init__(
-        self,
-        planner,
-        executor,
-    ):
+    def __init__(self, planner, executor) -> None:
         self.planner = planner
         self.executor = executor
 
@@ -41,16 +39,35 @@ class ReACTLoop:
         max_iterations: int = 5,
         reasoning_interval: int = 1,
         max_reasoning_tokens: int = 64,
-    ):
-        start_time = time.monotonic()
+        guardrail_config: GuardrailConfig | None = None,
+    ) -> list[Any]:
         """
         Execute iterative reasoning loop.
+
+        Args:
+            provider: BaseLLMProvider for reasoning calls.
+            goal: The user goal string.
+            context: ExecutionContext — all mutable state lives here.
+            max_iterations: Maximum loop iterations (overridden by guardrail_config
+                when provided).
+            reasoning_interval: How often the reasoning LLM call fires (default every
+                iteration when conditions are met).
+            max_reasoning_tokens: Token budget for each reasoning call.
+            guardrail_config: When provided, max_iterations and timeout limits are read
+                from the config rather than the hardcoded defaults.
         """
+        # Resolve limits from guardrail config when provided
+        _config = guardrail_config or GuardrailConfig()
+        effective_max_iterations = _config.max_react_iterations
+        guardrail = ExecutionGuardrail(_config)
+
+        start_time = time.perf_counter()
+
         logger.info(
             "ReACTLoop.start session=%s goal=%s max_iterations=%s",
             context.session_id,
             goal,
-            max_iterations,
+            effective_max_iterations,
         )
 
         tasks = await self.planner.create_plan(provider, goal, context)
@@ -61,16 +78,26 @@ class ReACTLoop:
             raise ValueError("reasoning_interval must be >= 1")
 
         iteration = 0
-        while not graph.all_completed() and iteration < max_iterations:
+        while not graph.all_completed() and iteration < effective_max_iterations:
             iteration += 1
 
-            # Reason step: ask the LLM to (re)consider the plan if there's
-            # something worth reasoning about.
+            # --- Guardrail checks (both raise GuardrailViolationError on breach) ---
+            try:
+                guardrail.check_iteration(iteration)
+                guardrail.check_timeout(start_time)
+            except GuardrailViolationError as e:
+                mark_guardrail_violation(e)
+                logger.warning(
+                    "ReACTLoop guardrail triggered session=%s iteration=%s code=%s",
+                    context.session_id,
+                    iteration,
+                    e.code,
+                )
+                raise
+
+            # --- Reason step ---
             context.reasoning_history.append(f"Planner invoked iteration={iteration}")
 
-            # FIX [latency]: was reasoning on the very first iteration of every
-            # request — including single-task plans that had no prior
-            # observations. That call was pure latency with zero effect.
             has_reason_to_think = len(tasks) > 1 or iteration > 1
             interval_gate_passes = (iteration - 1) % reasoning_interval == 0
             should_reason = has_reason_to_think and interval_gate_passes
@@ -89,7 +116,6 @@ class ReACTLoop:
                         f"Completed (recent): {completed_summary}\n"
                         "Provide a single short reasoning sentence for the next action."
                     )
-
                     reasoning = provider.chat_completion(
                         prompt,
                         system_prompt="You are a concise planning assistant.",
@@ -100,8 +126,10 @@ class ReACTLoop:
                         "ReACTLoop.reasoning session=%s iteration=%d reasoning=%s",
                         context.session_id,
                         iteration,
-                        (reasoning if isinstance(reasoning, str) else str(reasoning))[:200],
+                        str(reasoning)[:200],
                     )
+                except GuardrailViolationError:
+                    raise
                 except Exception as e:
                     logger.exception(
                         "ReACTLoop.reasoning_error session=%s iteration=%d",
@@ -110,10 +138,11 @@ class ReACTLoop:
                     )
                     context.reasoning_history.append(f"LLM error: {e}")
             else:
-                if not has_reason_to_think:
-                    skip_reason = "single-task plan with no prior observations"
-                else:
-                    skip_reason = "interval gating"
+                skip_reason = (
+                    "single-task plan with no prior observations"
+                    if not has_reason_to_think
+                    else "interval gating"
+                )
                 context.reasoning_history.append(f"Reasoning skipped due to {skip_reason}.")
                 logger.debug(
                     "ReACTLoop.reasoning_skipped session=%s iteration=%s task_count=%s reason=%s",
@@ -123,6 +152,7 @@ class ReACTLoop:
                     skip_reason,
                 )
 
+            # --- Execute ready tasks ---
             ready = graph.get_ready_tasks()
             logger.info(
                 "ReACTLoop.iteration session=%s iteration=%s ready_tasks=%s",
@@ -130,6 +160,7 @@ class ReACTLoop:
                 iteration,
                 len(ready),
             )
+
             if not ready:
                 context.observations.append("No ready tasks; breaking")
                 logger.warning(
@@ -160,12 +191,6 @@ class ReACTLoop:
                 for task, result in zip(ready, results, strict=True):
                     graph.mark_completed(task.id, result)
                     context.observations.append(f"Executed task {task.id} in parallel")
-                    logger.debug(
-                        "ReACTLoop.task.completed session=%s iteration=%s task_id=%s",
-                        context.session_id,
-                        iteration,
-                        task.id,
-                    )
 
             for t in ready:
                 final_results.append(t.result)

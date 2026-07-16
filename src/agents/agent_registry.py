@@ -1,16 +1,12 @@
-"""Dynamic agent discovery and registration.
-
-Registry discovers agent classes and stores class metadata only. Use
-`create_instance` to construct an agent via the AgentFactory.
-"""
+"""Dynamic agent discovery and registration."""
 
 import importlib
 import inspect
 import logging
 import pkgutil
 import types
-from dataclasses import dataclass
 
+from src.agents.agent_descriptor import AgentDescriptor
 from src.agents.agent_factory import AgentFactory
 from src.agents.base_agent import BaseAgent
 from src.core.container import ServiceContainer
@@ -18,59 +14,34 @@ from src.core.container import ServiceContainer
 logger = logging.getLogger(__name__)
 
 
-@dataclass
-class AgentDescriptor:
-    """Metadata descriptor for a registered agent."""
-
-    name: str
-    description: str
-    capabilities: list[str]
-    agent_class: type[BaseAgent]
-    version: str = "1.0"
-
-
 class AgentRegistry:
     """
     Dynamically discovers and registers agent classes.
 
-    Responsibilities:
-    - Discover agent classes
-    - Store descriptor metadata and class references (no instances)
-    - Provide factory-backed instance creation when requested
-
-    FIXME: Backwards compatibility: temporarily accept raw agent class entries
-    when tests or older code still assign classes directly to registry.agents.
-    This will be removed once the descriptor migration is complete across the
-    whole codebase.
+    Stores AgentDescriptor objects only — no raw agent classes, no instances.
+    Instances are cached after first construction by create_instance().
     """
 
     def __init__(self, container: ServiceContainer) -> None:
         self.container = container
-
-        # maps agent_name -> descriptor or raw agent class
-        self.agents: dict[str, AgentDescriptor | type[BaseAgent]] = {}
-
-        # FIX: cache constructed instances — construct once, reuse per request
+        # maps agent_name -> AgentDescriptor (descriptor-only, no raw classes)
+        self.agents: dict[str, AgentDescriptor] = {}
+        # cached instances — construct once, reuse per request
         self._instances: dict[str, BaseAgent] = {}
-
-        self.agent_factory = AgentFactory(
-            container=container,
-        )
-
+        self.agent_factory = AgentFactory(container=container)
         self.discover_agents()
 
     def discover_agents(self) -> None:
-        """Auto-discover all agent implementations and register classes."""
+        """Auto-discover all agent implementations and register descriptors."""
         import src.agents as agents_package
 
         logger.info("Discovering agents...")
 
         for _, module_name, _ in pkgutil.iter_modules(agents_package.__path__):
-            if module_name in ["base_agent", "agent_factory", "agent_registry"]:
+            if module_name in {"base_agent", "agent_factory", "agent_registry"}:
                 continue
 
             full_module_name = f"src.agents.{module_name}"
-
             try:
                 logger.info("Importing agent module: %s", full_module_name)
                 module = importlib.import_module(full_module_name)
@@ -81,7 +52,7 @@ class AgentRegistry:
         logger.info("Registered agent classes: %s", list(self.agents.keys()))
 
     def _register_module_agents(self, module: types.ModuleType) -> None:
-        """Register BaseAgent subclasses from module (store descriptors only)."""
+        """Register BaseAgent subclasses from module as AgentDescriptors."""
         for _, obj in inspect.getmembers(module, inspect.isclass):
             if not issubclass(obj, BaseAgent) or obj is BaseAgent:
                 continue
@@ -99,39 +70,29 @@ class AgentRegistry:
                 logger.exception("Failed to register agent class: %s", obj.__name__)
 
     def create_instance(self, name: str) -> BaseAgent:
-        """
-        Return an agent instance by name, constructing it on first call.
-
-        FIX: cached — second call for same name returns the same instance.
-        Agents must be stateless between requests; all request state lives
-        in ExecutionContext passed to handle().
-        """
+        """Return an agent instance by name, constructing on first call."""
         if name not in self.agents:
             raise ValueError(f"Agent '{name}' not found. Available: {list(self.agents)}")
 
         if name not in self._instances:
-            descriptor_or_class = self.agents[name]
-            if isinstance(descriptor_or_class, AgentDescriptor):
-                agent_class = descriptor_or_class.agent_class
-            else:
-                agent_class = descriptor_or_class
-            self._instances[name] = self.agent_factory.create(agent_class)
+            self._instances[name] = self.agent_factory.create(self.agents[name].agent_class)
             logger.info("Constructed and cached agent instance: %s", name)
 
         return self._instances[name]
 
     def get(self, name: str) -> BaseAgent:
-        """Return an agent instance by name (legacy compatibility alias)."""
+        """Alias for create_instance (legacy compatibility)."""
         return self.create_instance(name)
 
     def get_class(self, name: str) -> type[BaseAgent]:
         """Return the agent class for the given name."""
         if name not in self.agents:
             raise ValueError(f"Agent '{name}' not found.")
-        descriptor_or_class = self.agents[name]
-        if isinstance(descriptor_or_class, AgentDescriptor):
-            return descriptor_or_class.agent_class
-        return descriptor_or_class
+        return self.agents[name].agent_class
+
+    def descriptors(self) -> list[AgentDescriptor]:
+        """Return all AgentDescriptors — use this to build the router."""
+        return list(self.agents.values())
 
     def list_agents(self) -> list[str]:
         return list(self.agents.keys())
@@ -140,19 +101,13 @@ class AgentRegistry:
         return name in self.agents
 
     def health_check(self) -> dict[str, dict]:
-        """Return a lightweight health map for discovered agents.
-
-        Avoids instantiating agents — uses descriptor metadata only.
-        """
+        """Lightweight health map using descriptor metadata only."""
         return {
             name: {
                 "status": "discovered",
-                "class": descriptor.agent_class.__name__
-                if isinstance(descriptor, AgentDescriptor)
-                else descriptor.__name__,
-                "capabilities": descriptor.capabilities
-                if isinstance(descriptor, AgentDescriptor)
-                else getattr(descriptor, "capabilities", []),
+                "class": d.agent_class.__name__,
+                "capabilities": d.capabilities,
+                "version": d.version,
             }
-            for name, descriptor in self.agents.items()
+            for name, d in self.agents.items()
         }

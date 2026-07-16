@@ -1,6 +1,10 @@
+import logging
+
 import anthropic
 
 from src.providers.base_provider import BaseLLMProvider, HealthStatus
+
+logger = logging.getLogger(__name__)
 
 
 class ClaudeProvider(BaseLLMProvider):

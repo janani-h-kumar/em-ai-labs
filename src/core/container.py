@@ -50,11 +50,7 @@ class ServiceContainer:
 
         if not self.memory_registry.has_backend(memory_backend_name):
             raise ValueError(
-                "Unknown memory backend: %s. Available backends: %s"
-                % (
-                    memory_backend_name,
-                    self.memory_registry.list_backends(),
-                )
+                f"Unknown memory backend: {memory_backend_name}. Available backends: {self.memory_registry.list_backends()}"
             )
 
         memory_class = self.memory_registry.get_class(memory_backend_name)
