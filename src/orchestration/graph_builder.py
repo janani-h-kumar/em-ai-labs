@@ -7,15 +7,20 @@ from typing import Any, TypedDict
 
 from langgraph.graph import END, StateGraph
 
-from src.observability.timeline import TimelineTimer, append_timeline_event, preview_value
+from src.observability.timeline import (
+    TimelineTimer,
+    append_state_transition,
+    append_timeline_event,
+    preview_value,
+)
 from src.orchestration.executor import Executor
-from src.orchestration.models import ExecutionContext, Task, TaskStatus
+from src.orchestration.models import AgentState, ExecutionContext, Task, TaskStatus
 from src.orchestration.planner import Planner
 
 logger = logging.getLogger(__name__)
 
 
-class AgentState(TypedDict, total=False):
+class GraphState(TypedDict, total=False):
     """State carried through the LangGraph workflow."""
 
     session_id: str
@@ -27,15 +32,26 @@ class AgentState(TypedDict, total=False):
     final_response: str
     timeline: list[dict]
     metadata: dict[str, Any]
+    agent_state: str
     error: dict[str, Any] | str | None
+
+
+class HumanApprovalRequiredError(Exception):
+    """Raised when an opt-in human approval checkpoint is reached."""
 
 
 class GraphBuilder:
     """Build a LangGraph workflow around the existing planner/executor components."""
 
-    def __init__(self, planner: Planner | None = None, executor: Executor | None = None) -> None:
+    def __init__(
+        self,
+        planner: Planner | None = None,
+        executor: Executor | None = None,
+        approval_enabled: bool = False,
+    ) -> None:
         self.planner = planner or Planner()
         self.executor = executor
+        self.approval_enabled = approval_enabled
         self._graph = None
 
     def build(self) -> StateGraph:
@@ -43,13 +59,23 @@ class GraphBuilder:
         if self._graph is not None:
             return self._graph
 
-        builder = StateGraph(AgentState)
+        builder = StateGraph(GraphState)
 
-        async def plan_node(state: AgentState) -> AgentState:
+        async def plan_node(state: GraphState) -> GraphState:
             timer = TimelineTimer()
             context = state["context"]
             session_id = state.get("session_id") or context.session_id
             provider = state.get("provider")
+            previous_state = state.get("agent_state", AgentState.PLANNING.value)
+            state["agent_state"] = AgentState.PLANNING.value
+            append_state_transition(
+                state,
+                session_id=session_id,
+                node="planner",
+                from_state=previous_state,
+                to_state=AgentState.PLANNING.value,
+                duration_ms=timer.elapsed_ms(),
+            )
             if provider is None:
                 error = "AgentState must carry a provider for graph planning"
                 state["error"] = error
@@ -97,10 +123,43 @@ class GraphBuilder:
                 raise
             return state
 
-        async def execute_node(state: AgentState) -> AgentState:
+        async def execute_node(state: GraphState) -> GraphState:
             timer = TimelineTimer()
             context = state["context"]
             session_id = state.get("session_id") or context.session_id
+            previous_state = state.get("agent_state", AgentState.PLANNING.value)
+            state["agent_state"] = AgentState.TOOL_EXECUTION.value
+            append_state_transition(
+                state,
+                session_id=session_id,
+                node="executor",
+                from_state=previous_state,
+                to_state=AgentState.TOOL_EXECUTION.value,
+                duration_ms=timer.elapsed_ms(),
+            )
+            if self.approval_enabled and not state.get("approved", False):
+                state["agent_state"] = AgentState.TOOL_SELECTION.value
+                append_state_transition(
+                    state,
+                    session_id=session_id,
+                    node="executor",
+                    from_state=previous_state,
+                    to_state=AgentState.TOOL_SELECTION.value,
+                    duration_ms=timer.elapsed_ms(),
+                )
+                append_timeline_event(
+                    state,
+                    session_id=session_id,
+                    node="executor",
+                    event_type="agent.approval.required",
+                    status="pending",
+                    attributes={
+                        "approval_required_at": AgentState.TOOL_SELECTION.value,
+                        "message": "Human approval required before tool execution.",
+                    },
+                )
+                raise HumanApprovalRequiredError("Human approval required before tool execution.")
+
             if self.executor is None:
                 error = "GraphBuilder requires an executor instance"
                 state["error"] = error
@@ -164,7 +223,15 @@ class GraphBuilder:
                             "result_preview": preview_value(result),
                         },
                     )
-                state["results"] = results
+                    state["results"] = results
+                append_state_transition(
+                    state,
+                    session_id=session_id,
+                    node="executor",
+                    from_state=AgentState.TOOL_EXECUTION.value,
+                    to_state=AgentState.OBSERVATION.value,
+                    duration_ms=timer.elapsed_ms(),
+                )
                 append_timeline_event(
                     state,
                     session_id=session_id,
@@ -176,6 +243,14 @@ class GraphBuilder:
                 )
             except Exception as exc:
                 state["error"] = _error_to_state("executor", exc)
+                append_state_transition(
+                    state,
+                    session_id=session_id,
+                    node="executor",
+                    from_state=AgentState.TOOL_EXECUTION.value,
+                    to_state=AgentState.ERROR.value,
+                    duration_ms=timer.elapsed_ms(),
+                )
                 append_timeline_event(
                     state,
                     session_id=session_id,

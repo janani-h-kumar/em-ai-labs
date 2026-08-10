@@ -97,6 +97,33 @@ def append_timeline_event(
     return event
 
 
+def append_state_transition(
+    target: Any,
+    *,
+    session_id: str,
+    node: str,
+    from_state: str,
+    to_state: str,
+    duration_ms: float | None = None,
+    attributes: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Append an explicit agent state transition to the timeline."""
+    merged_attributes = {
+        "from_state": from_state,
+        "to_state": to_state,
+        **(attributes or {}),
+    }
+    return append_timeline_event(
+        target,
+        session_id=session_id,
+        node=node,
+        event_type="agent.state.changed",
+        status="changed",
+        duration_ms=duration_ms,
+        attributes=merged_attributes,
+    )
+
+
 class TimelineTimer:
     """Small timer context for consistent timeline durations."""
 

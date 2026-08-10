@@ -1,7 +1,7 @@
 import asyncio
 
-from src.orchestration.graph_builder import AgentState, GraphBuilder
-from src.orchestration.models import ExecutionContext, Task
+from src.orchestration.graph_builder import GraphBuilder, HumanApprovalRequiredError
+from src.orchestration.models import AgentState, ExecutionContext, Task
 
 
 class DummyProvider:
@@ -27,7 +27,7 @@ def test_graph_builder_state_shape_and_build():
     assert graph is not None
     assert compiled is not None
     assert hasattr(compiled, "ainvoke")
-    assert AgentState.__annotations__
+    assert AgentState.PLANNING.value == "planning"
 
 
 def test_graph_builder_checkpoint_factory_uses_sqlite_saver():
@@ -59,3 +59,29 @@ def test_graph_builder_can_execute_via_async_graph_entrypoint():
     assert result["results"][0]["task_id"] == "task-1"
     assert result["results"][0]["result"] == {"task_id": "task-1"}
     assert any(event["event_type"] == "planner.completed" for event in result["timeline"])
+    assert any(event["event_type"] == "agent.state.changed" for event in result["timeline"])
+
+
+def test_graph_builder_approval_point_is_opt_in():
+    builder = GraphBuilder(
+        planner=DummyPlanner(),
+        executor=DummyExecutor(),
+        approval_enabled=True,
+    )
+    context = ExecutionContext(session_id="sess-1", goal="demo goal")
+
+    try:
+        asyncio.run(
+            builder.ainvoke(
+                {
+                    "session_id": "sess-1",
+                    "context": context,
+                    "goal": "demo goal",
+                    "provider": DummyProvider(),
+                    "timeline": [],
+                }
+            )
+        )
+        assert False, "Expected HumanApprovalRequiredError"
+    except HumanApprovalRequiredError as exc:
+        assert "approval" in str(exc).lower()

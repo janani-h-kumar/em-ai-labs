@@ -18,6 +18,19 @@ class TaskStatus(Enum):
     FAILED = "failed"
 
 
+class AgentState(Enum):
+    """
+    High-level runtime state for the agent orchestration lifecycle.
+    """
+
+    PLANNING = "planning"
+    TOOL_SELECTION = "tool_selection"
+    TOOL_EXECUTION = "tool_execution"
+    OBSERVATION = "observation"
+    RESPONSE = "response"
+    ERROR = "error"
+
+
 @dataclass
 class Task:
     """
@@ -57,5 +70,9 @@ class ExecutionContext:
     task_state: dict[str, TaskStatus] = field(default_factory=dict)
 
     completed_tasks: dict[str, Any] = field(default_factory=dict)
+
+    current_state: AgentState = AgentState.PLANNING
+
+    state_history: list[AgentState] = field(default_factory=list)
 
     metadata: dict[str, Any] = field(default_factory=dict)

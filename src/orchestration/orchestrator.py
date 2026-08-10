@@ -10,11 +10,15 @@ from typing import Any
 from src.guardrails import GuardrailConfig
 from src.guardrails.output_guardrail import OutputGuardrail
 from src.memory.base_memory import BaseMemory
-from src.observability.timeline import TimelineTimer, append_timeline_event
+from src.observability.timeline import (
+    TimelineTimer,
+    append_state_transition,
+    append_timeline_event,
+)
 from src.observability.tracing import create_span
 from src.orchestration.executor import Executor
 from src.orchestration.graph_builder import GraphBuilder
-from src.orchestration.models import ExecutionContext
+from src.orchestration.models import AgentState, ExecutionContext
 from src.orchestration.planner import Planner
 from src.orchestration.react_loop import ReACTLoop
 from src.providers.base_provider import BaseLLMProvider
@@ -56,6 +60,7 @@ class Orchestrator:
         self.graph_builder = GraphBuilder(
             planner=self.planner,
             executor=self.executor,
+            approval_enabled=self._approval_enabled(),
         )
         self.react_loop = ReACTLoop(
             planner=self.planner,
@@ -93,6 +98,15 @@ class Orchestrator:
                 goal=goal,
                 memory=memory_context,
             )
+            context.current_state = AgentState.PLANNING
+            context.state_history.append(AgentState.PLANNING)
+            append_state_transition(
+                context,
+                session_id=session_id,
+                node="orchestrator",
+                from_state="none",
+                to_state=context.current_state.value,
+            )
             append_timeline_event(
                 context,
                 session_id=session_id,
@@ -111,6 +125,15 @@ class Orchestrator:
                 try:
                     results = await self._run_langgraph(goal, session_id, context)
                 except Exception as exc:
+                    context.current_state = AgentState.ERROR
+                    context.state_history.append(AgentState.ERROR)
+                    append_state_transition(
+                        context,
+                        session_id=session_id,
+                        node="orchestrator",
+                        from_state=AgentState.OBSERVATION.value,
+                        to_state=AgentState.ERROR.value,
+                    )
                     if not self._fallback_to_react():
                         raise
                     logger.exception(
@@ -138,6 +161,15 @@ class Orchestrator:
             else:
                 results = await self._run_react(goal, context)
 
+            context.current_state = AgentState.RESPONSE
+            context.state_history.append(AgentState.RESPONSE)
+            append_state_transition(
+                context,
+                session_id=session_id,
+                node="orchestrator",
+                from_state=AgentState.OBSERVATION.value,
+                to_state=AgentState.RESPONSE.value,
+            )
             raw_response = self.synthesize(goal, results)
 
             # Output guardrail — validate before returning to the caller.
@@ -174,6 +206,16 @@ class Orchestrator:
 
     async def _run_react(self, goal: str, context: ExecutionContext) -> list[Any]:
         """Run the legacy ReACT orchestration path."""
+        previous_state = context.current_state.value
+        context.current_state = AgentState.PLANNING
+        context.state_history.append(AgentState.PLANNING)
+        append_state_transition(
+            context,
+            session_id=context.session_id,
+            node="react",
+            from_state=previous_state,
+            to_state=context.current_state.value,
+        )
         append_timeline_event(
             context,
             session_id=context.session_id,
@@ -187,6 +229,14 @@ class Orchestrator:
             goal=goal,
             context=context,
             guardrail_config=self.guardrail_config,
+        )
+        append_state_transition(
+            context,
+            session_id=context.session_id,
+            node="react",
+            from_state=AgentState.PLANNING.value,
+            to_state=AgentState.OBSERVATION.value,
+            duration_ms=timer.elapsed_ms(),
         )
         append_timeline_event(
             context,
@@ -211,6 +261,17 @@ class Orchestrator:
             event_type="graph.started",
             status="started",
         )
+        previous_state = context.current_state.value
+        context.current_state = AgentState.PLANNING
+        context.state_history.append(AgentState.PLANNING)
+        append_state_transition(
+            context,
+            session_id=session_id,
+            node="graph",
+            from_state=previous_state,
+            to_state=context.current_state.value,
+            duration_ms=timer.elapsed_ms(),
+        )
         checkpointer = self._build_langgraph_checkpointer()
         state = await self.graph_builder.ainvoke(
             {
@@ -225,6 +286,17 @@ class Orchestrator:
             config={"configurable": {"thread_id": session_id}},
         )
         context.metadata["timeline"] = state.get("timeline", context.metadata.get("timeline", []))
+        previous_state = context.current_state.value
+        context.current_state = AgentState.OBSERVATION
+        context.state_history.append(AgentState.OBSERVATION)
+        append_state_transition(
+            context,
+            session_id=session_id,
+            node="graph",
+            from_state=previous_state,
+            to_state=context.current_state.value,
+            duration_ms=timer.elapsed_ms(),
+        )
         append_timeline_event(
             context,
             session_id=session_id,
@@ -248,6 +320,9 @@ class Orchestrator:
 
     def _fallback_to_react(self) -> bool:
         return bool(self._config_get("runtime.langgraph.fallback_to_react", False))
+
+    def _approval_enabled(self) -> bool:
+        return bool(self._config_get("runtime.langgraph.approval.enabled", False))
 
     def _build_langgraph_checkpointer(self) -> object | None:
         enabled = bool(self._config_get("runtime.langgraph.checkpoint.enabled", False))
