@@ -6,6 +6,7 @@ venv/
 .Python
 .venv/
 logs/
+data/
 
 
 # Configuration with sensitive data

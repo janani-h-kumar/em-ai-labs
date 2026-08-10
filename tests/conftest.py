@@ -10,40 +10,57 @@ Changes from original:
 - Added explicit docstrings explaining what each fixture simulates.
 """
 
+import importlib.util
 import sys
 import types
 from unittest.mock import Mock, patch
 
 import pytest
 
+
+def _register_stub(module_name: str, *, package: bool = False) -> None:
+    """Register a lightweight stub only when the module is genuinely unavailable."""
+    if module_name in sys.modules:
+        return
+    if importlib.util.find_spec(module_name) is not None:
+        return
+
+    module = types.ModuleType(module_name)
+    if package:
+        module.__path__ = []
+    sys.modules[module_name] = module
+
+
 # Lightweight stubs for optional external dependencies to allow offline unit tests.
 # These create minimal modules/classes expected by the code under test so import
 # time does not fail when packages (langchain, anthropic, langchain_core) are
-# not installed in the test environment.
-_stubs = {
-    "anthropic": types.ModuleType("anthropic"),
-    "langchain": types.ModuleType("langchain"),
-    "langchain.agents": types.ModuleType("langchain.agents"),
-    "langchain_core": types.ModuleType("langchain_core"),
-    "langchain_core.tools": types.ModuleType("langchain_core.tools"),
-}
+# not installed in the test environment. When those packages are available, we
+# leave them alone so submodules such as langchain_core.runnables can resolve
+# normally.
+_register_stub("anthropic")
+_register_stub("langchain", package=True)
+_register_stub("langchain.agents")
+_register_stub("langchain_core", package=True)
+_register_stub("langchain_core.tools")
 
-for name, mod in _stubs.items():
-    if name not in sys.modules:
-        sys.modules[name] = mod
-
-# Minimal symbols expected by imports in the codebase
-sys.modules["langchain.agents"].AgentExecutor = type("AgentExecutor", (), {})
-sys.modules["langchain.agents"].create_tool_calling_agent = lambda *a, **k: None
+if "langchain.agents" in sys.modules and not getattr(
+    sys.modules["langchain.agents"], "AgentExecutor", None
+):
+    sys.modules["langchain.agents"].AgentExecutor = type("AgentExecutor", (), {})
+    sys.modules["langchain.agents"].create_tool_calling_agent = lambda *a, **k: None
 
 
-def _tool_factory(name: str, description: str = "", args_schema=None, func=None):
-    return types.SimpleNamespace(
-        name=name, description=description, args_schema=args_schema, func=func
-    )
+if "langchain_core.tools" in sys.modules and not getattr(
+    sys.modules["langchain_core.tools"], "Tool", None
+):
 
+    def _tool_factory(name: str, description: str = "", args_schema=None, func=None):
+        return types.SimpleNamespace(
+            name=name, description=description, args_schema=args_schema, func=func
+        )
 
-sys.modules["langchain_core.tools"].Tool = _tool_factory
+    sys.modules["langchain_core.tools"].Tool = _tool_factory
+
 # chat_history
 if "langchain_core.chat_history" not in sys.modules:
     sys.modules["langchain_core.chat_history"] = types.ModuleType("langchain_core.chat_history")

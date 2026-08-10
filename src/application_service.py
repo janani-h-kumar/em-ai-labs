@@ -72,6 +72,7 @@ class ApplicationService:
                 provider=self.container.provider,
                 memory=self.container.memory,
                 guardrail_config=self.guardrail_config,
+                config_manager=self.container.config_manager,
             )
 
             logger.info("ApplicationService initialised successfully")

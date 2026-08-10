@@ -9,3 +9,17 @@ persistence:
   enabled: false
   type: "memory"  # "memory" or "sqlite"
   db_path: "./chat_history.db"
+
+# Runtime
+runtime:
+  orchestration: "react"  # "react" or "langgraph"
+  langgraph:
+    fallback_to_react: false
+    checkpoint:
+      enabled: false
+      backend: "memory"  # "memory" or "sqlite"
+      db_path: "./data/langgraph_checkpoints.sqlite"
+    timeline:
+      enabled: true
+      include_result_previews: true
+      max_preview_chars: 500
