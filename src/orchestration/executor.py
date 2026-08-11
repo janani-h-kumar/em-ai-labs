@@ -73,6 +73,8 @@ class Executor:
 
                 resolved_agent_name: str = agent_name or ""
                 span.set_attribute("agent.name", resolved_agent_name)
+                span.set_attribute("agent", resolved_agent_name)
+                span.set_attribute("decision", "route_to_agent")
 
                 agent = self.agent_registry.create_instance(agent_name)
 

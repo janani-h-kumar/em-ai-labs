@@ -107,11 +107,13 @@ class WeatherClient:
         with create_span(
             "tool.api_request",
             tool_name="weather_tool",
+            tool="weather_tool",
             api_service="openweathermap",
             http_method="GET",
             url=f"{self.base_url}/weather",
             city=city,
             units=units,
+            decision="tool.api_request",
         ) as span:
             start_time = time.perf_counter()
             try:
@@ -123,6 +125,7 @@ class WeatherClient:
                     timeout=5,
                 )
                 duration_ms = round((time.perf_counter() - start_time) * 1000, 1)
+                span.set_attribute("latency_ms", duration_ms)
                 span.set_attribute("http.status_code", response.status_code)
                 span.set_attribute("api_latency_ms", duration_ms)
 
@@ -202,6 +205,8 @@ class WeatherTool(BaseTool):
         with create_span(
             "tool.execute",
             tool_name=self.name,
+            tool=self.name,
+            decision="tool.get_temperature",
             operation="get_temperature",
             city=city,
             units=units,
@@ -214,7 +219,10 @@ class WeatherTool(BaseTool):
                 return result
             except Exception as e:
                 duration_ms = round((time.perf_counter() - start_time) * 1000, 1)
+                span.set_attribute("latency_ms", duration_ms)
                 span.set_attribute("tool_latency_ms", duration_ms)
+                span.set_attribute("error.type", type(e).__name__)
+                span.set_attribute("error.message", str(e))
                 span.set_status(otel_trace.StatusCode.ERROR, str(e))
                 span.record_exception(e)
                 raise

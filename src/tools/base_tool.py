@@ -39,9 +39,21 @@ class BaseTool(ABC):
         Standardized execution wrapper with exception shielding.
         """
 
+        def _size_bytes(value: Any) -> int | None:
+            if value is None:
+                return None
+            if isinstance(value, (bytes, bytearray)):
+                return len(value)
+            try:
+                return len(str(value).encode("utf-8"))
+            except Exception:
+                return None
+
         with create_span(
             "tool.execute",
             tool_name=getattr(self, "name", "unknown_tool"),
+            tool=getattr(self, "name", "unknown_tool"),
+            decision="tool.execute",
             args=str(args)[:200],
             kwargs=str(kwargs)[:200],
         ) as span:
@@ -50,6 +62,9 @@ class BaseTool(ABC):
                 result = self._run(*args, **kwargs)
                 duration_ms = round((time.perf_counter() - start_time) * 1000, 1)
                 span.set_attribute("tool_latency_ms", duration_ms)
+                result_size = _size_bytes(result)
+                if result_size is not None:
+                    span.set_attribute("result_size_bytes", result_size)
                 logger.info(
                     "Tool execution completed",
                     extra={
@@ -63,7 +78,10 @@ class BaseTool(ABC):
 
             except Exception as e:
                 duration_ms = round((time.perf_counter() - start_time) * 1000, 1)
+                span.set_attribute("latency_ms", duration_ms)
                 span.set_attribute("tool_latency_ms", duration_ms)
+                span.set_attribute("error.type", type(e).__name__)
+                span.set_attribute("error.message", str(e))
                 span.set_status(otel_trace.StatusCode.ERROR, str(e))
                 logger.exception(
                     "Execution error in tool '%s'",

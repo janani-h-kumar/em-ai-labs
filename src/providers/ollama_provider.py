@@ -17,8 +17,8 @@ import time
 from typing import Any, TypedDict, cast
 
 import requests
-from opentelemetry import trace as otel_trace
 from openai import OpenAI
+from opentelemetry import trace as otel_trace
 
 from src.observability.tracing import create_span
 from src.providers.base_provider import BaseLLMProvider, HealthStatus
@@ -256,6 +256,8 @@ class OllamaClient(BaseLLMProvider):
             "llm.chat_completion",
             llm_provider="ollama",
             model_name=str(self.model),
+            model=str(self.model),
+            decision="llm.chat_completion",
             message_count=len(normalised_messages),
             max_tokens=max_tokens or 0,
             has_system_prompt=system_prompt is not None,
@@ -285,11 +287,17 @@ class OllamaClient(BaseLLMProvider):
                 completion_tokens = _usage_value(token_usage, "completion_tokens")
                 total_tokens = _usage_value(token_usage, "total_tokens")
                 duration_ms = round((time.perf_counter() - start_time) * 1000, 1)
+                response_size_bytes = len(result.encode("utf-8"))
 
+                span.set_attribute("latency_ms", duration_ms)
                 span.set_attribute("llm_latency_ms", duration_ms)
                 span.set_attribute("prompt_tokens", prompt_tokens)
                 span.set_attribute("completion_tokens", completion_tokens)
                 span.set_attribute("total_tokens", total_tokens)
+                span.set_attribute("tokens.prompt", prompt_tokens)
+                span.set_attribute("tokens.completion", completion_tokens)
+                span.set_attribute("tokens.total", total_tokens)
+                span.set_attribute("response_size_bytes", response_size_bytes)
 
                 logger.info(
                     "Successfully received response from model",

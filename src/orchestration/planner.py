@@ -60,6 +60,7 @@ class Planner:
             "planner.create_plan",
             session_id=context.session_id,
             goal=goal,
+            decision="planner",
         ) as span:
             if self._looks_single_intent(goal):
                 logger.debug(
@@ -67,9 +68,11 @@ class Planner:
                     goal,
                 )
                 span.set_attribute("planner.heuristic_skip", True)
+                span.set_attribute("decision", "heuristic_skip")
                 steps: list[PlanStep] | None = None
             else:
                 span.set_attribute("planner.heuristic_skip", False)
+                span.set_attribute("decision", "llm_plan")
                 steps = await self._plan_via_llm(provider, goal, context)
 
             duration_ms = round((time.perf_counter() - start_time) * 1000, 1)

@@ -9,12 +9,11 @@ from langgraph.graph import END, StateGraph
 
 from src.observability.timeline import (
     TimelineTimer,
-    append_state_transition,
     append_timeline_event,
     preview_value,
 )
 from src.orchestration.executor import Executor
-from src.orchestration.models import AgentState, ExecutionContext, Task, TaskStatus
+from src.orchestration.models import ExecutionContext, Task, TaskStatus
 from src.orchestration.planner import Planner
 
 logger = logging.getLogger(__name__)
@@ -32,7 +31,6 @@ class GraphState(TypedDict, total=False):
     final_response: str
     timeline: list[dict]
     metadata: dict[str, Any]
-    agent_state: str
     error: dict[str, Any] | str | None
 
 
@@ -66,18 +64,15 @@ class GraphBuilder:
             context = state["context"]
             session_id = state.get("session_id") or context.session_id
             provider = state.get("provider")
-            previous_state = state.get("agent_state", AgentState.PLANNING.value)
-            state["agent_state"] = AgentState.PLANNING.value
-            append_state_transition(
+            append_timeline_event(
                 state,
                 session_id=session_id,
                 node="planner",
-                from_state=previous_state,
-                to_state=AgentState.PLANNING.value,
-                duration_ms=timer.elapsed_ms(),
+                event_type="graph.planner.started",
+                status="started",
             )
             if provider is None:
-                error = "AgentState must carry a provider for graph planning"
+                error = "Graph state must carry a provider for graph planning"
                 state["error"] = error
                 append_timeline_event(
                     state,
@@ -127,34 +122,22 @@ class GraphBuilder:
             timer = TimelineTimer()
             context = state["context"]
             session_id = state.get("session_id") or context.session_id
-            previous_state = state.get("agent_state", AgentState.PLANNING.value)
-            state["agent_state"] = AgentState.TOOL_EXECUTION.value
-            append_state_transition(
+            append_timeline_event(
                 state,
                 session_id=session_id,
                 node="executor",
-                from_state=previous_state,
-                to_state=AgentState.TOOL_EXECUTION.value,
-                duration_ms=timer.elapsed_ms(),
+                event_type="graph.executor.started",
+                status="started",
             )
             if self.approval_enabled and not state.get("approved", False):
-                state["agent_state"] = AgentState.TOOL_SELECTION.value
-                append_state_transition(
-                    state,
-                    session_id=session_id,
-                    node="executor",
-                    from_state=previous_state,
-                    to_state=AgentState.TOOL_SELECTION.value,
-                    duration_ms=timer.elapsed_ms(),
-                )
                 append_timeline_event(
                     state,
                     session_id=session_id,
                     node="executor",
-                    event_type="agent.approval.required",
+                    event_type="graph.approval.required",
                     status="pending",
                     attributes={
-                        "approval_required_at": AgentState.TOOL_SELECTION.value,
+                        "approval_required_at": "tool_selection",
                         "message": "Human approval required before tool execution.",
                     },
                 )
@@ -224,38 +207,22 @@ class GraphBuilder:
                         },
                     )
                     state["results"] = results
-                append_state_transition(
-                    state,
-                    session_id=session_id,
-                    node="executor",
-                    from_state=AgentState.TOOL_EXECUTION.value,
-                    to_state=AgentState.OBSERVATION.value,
-                    duration_ms=timer.elapsed_ms(),
-                )
                 append_timeline_event(
                     state,
                     session_id=session_id,
                     node="executor",
-                    event_type="executor.completed",
+                    event_type="graph.executor.completed",
                     status="completed",
                     duration_ms=timer.elapsed_ms(),
                     attributes={"result_count": len(results)},
                 )
             except Exception as exc:
                 state["error"] = _error_to_state("executor", exc)
-                append_state_transition(
-                    state,
-                    session_id=session_id,
-                    node="executor",
-                    from_state=AgentState.TOOL_EXECUTION.value,
-                    to_state=AgentState.ERROR.value,
-                    duration_ms=timer.elapsed_ms(),
-                )
                 append_timeline_event(
                     state,
                     session_id=session_id,
                     node="executor",
-                    event_type="executor.failed",
+                    event_type="graph.executor.failed",
                     status="failed",
                     duration_ms=timer.elapsed_ms(),
                     attributes={"error": str(exc), "error_type": type(exc).__name__},
@@ -277,11 +244,11 @@ class GraphBuilder:
 
     async def ainvoke(
         self,
-        initial_state: AgentState,
+        initial_state: GraphState,
         *,
         checkpointer: object | None = None,
         config: dict[str, Any] | None = None,
-    ) -> AgentState:
+    ) -> GraphState:
         """Compile and asynchronously invoke the graph."""
         app = self.compile(checkpointer=checkpointer)
         return await app.ainvoke(initial_state, config=config)

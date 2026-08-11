@@ -181,6 +181,48 @@ class SpanContextManager:
         return self._manager.__exit__(exc_type, exc_val, exc_tb)
 
 
+class StartedSpan:
+    """Explicitly-started span object for manual lifecycle control."""
+
+    def __init__(self, name: str, attributes: dict[str, Any]) -> None:
+        self._span = tracer.start_span(name)
+        self._scope = trace.use_span(self._span, end_on_exit=False)
+        self._scope.__enter__()
+        for key, value in attributes.items():
+            try:
+                self._span.set_attribute(key, value)
+            except Exception:
+                logger.exception("Failed to set trace attribute %s=%s", key, value)
+
+    @property
+    def span(self):
+        return self._span
+
+    def end(self) -> None:
+        try:
+            self._span.end()
+        finally:
+            self._scope.__exit__(None, None, None)
+
+
+def start_span(name: str, **attributes: Any) -> StartedSpan:
+    """Start a span and make it the current active span."""
+    return StartedSpan(name, attributes)
+
+
+def end_span(span: StartedSpan | Any) -> None:
+    """End a previously-started span."""
+    if isinstance(span, StartedSpan):
+        span.end()
+        return
+
+    if span is not None and hasattr(span, "end"):
+        try:
+            span.end()
+        except Exception:
+            logger.exception("Failed to end span %s", span)
+
+
 def create_span(name: str, **attributes: Any):
     """Create a span context manager with attributes set."""
     return SpanContextManager(name, attributes)

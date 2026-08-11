@@ -94,8 +94,10 @@ class ApplicationService:
                 "application_service.handle",
                 request_id=request_id,
                 session_id=request_id,
+                run_number=current_request,
                 request_count=current_request,
                 message_length=len(message) if isinstance(message, str) else 0,
+                decision="handle_request",
             ) as span:
                 # Input guardrail
                 try:

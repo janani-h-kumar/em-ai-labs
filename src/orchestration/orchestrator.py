@@ -12,13 +12,12 @@ from src.guardrails.output_guardrail import OutputGuardrail
 from src.memory.base_memory import BaseMemory
 from src.observability.timeline import (
     TimelineTimer,
-    append_state_transition,
     append_timeline_event,
 )
 from src.observability.tracing import create_span
 from src.orchestration.executor import Executor
 from src.orchestration.graph_builder import GraphBuilder
-from src.orchestration.models import AgentState, ExecutionContext
+from src.orchestration.models import ExecutionContext, ExecutionState
 from src.orchestration.planner import Planner
 from src.orchestration.react_loop import ReACTLoop
 from src.providers.base_provider import BaseLLMProvider
@@ -75,7 +74,11 @@ class Orchestrator:
             extra={"extra_data": {"goal": goal, "session_id": session_id}},
         )
 
-        with create_span("orchestrator.run", session_id=session_id, goal=goal) as span:
+        with create_span(
+            "orchestrator.run",
+            session_id=session_id,
+            goal=goal,
+        ) as span:
             # Memory retrieval
             memory_start = time.perf_counter()
             history = self.memory.get_history(session_id)
@@ -98,14 +101,15 @@ class Orchestrator:
                 goal=goal,
                 memory=memory_context,
             )
-            context.current_state = AgentState.PLANNING
-            context.state_history.append(AgentState.PLANNING)
-            append_state_transition(
-                context,
-                session_id=session_id,
+
+            runtime_mode = self._orchestration_mode()
+            span.set_attribute("orchestration.mode", runtime_mode)
+            span.set_attribute("decision", runtime_mode)
+
+            context.transition_to(
+                ExecutionState.PLANNING,
+                decision={"type": "runtime_selection", "mode": runtime_mode},
                 node="orchestrator",
-                from_state="none",
-                to_state=context.current_state.value,
             )
             append_timeline_event(
                 context,
@@ -118,23 +122,19 @@ class Orchestrator:
             )
 
             # Runtime selection: LangGraph is optional; ReACT remains the default.
-            runtime_mode = self._orchestration_mode()
-            span.set_attribute("orchestration.mode", runtime_mode)
-
             if runtime_mode == "langgraph":
                 try:
                     results = await self._run_langgraph(goal, session_id, context)
                 except Exception as exc:
-                    context.current_state = AgentState.ERROR
-                    context.state_history.append(AgentState.ERROR)
-                    append_state_transition(
-                        context,
-                        session_id=session_id,
-                        node="orchestrator",
-                        from_state=AgentState.OBSERVATION.value,
-                        to_state=AgentState.ERROR.value,
-                    )
                     if not self._fallback_to_react():
+                        context.transition_to(
+                            ExecutionState.FAILED,
+                            error={
+                                "type": type(exc).__name__,
+                                "message": str(exc),
+                            },
+                            node="orchestrator",
+                        )
                         raise
                     logger.exception(
                         "LangGraph execution failed; falling back to ReACT",
@@ -161,14 +161,10 @@ class Orchestrator:
             else:
                 results = await self._run_react(goal, context)
 
-            context.current_state = AgentState.RESPONSE
-            context.state_history.append(AgentState.RESPONSE)
-            append_state_transition(
-                context,
-                session_id=session_id,
+            context.transition_to(
+                ExecutionState.COMPLETED,
+                decision={"type": "response_ready"},
                 node="orchestrator",
-                from_state=AgentState.OBSERVATION.value,
-                to_state=AgentState.RESPONSE.value,
             )
             raw_response = self.synthesize(goal, results)
 
@@ -206,16 +202,7 @@ class Orchestrator:
 
     async def _run_react(self, goal: str, context: ExecutionContext) -> list[Any]:
         """Run the legacy ReACT orchestration path."""
-        previous_state = context.current_state.value
-        context.current_state = AgentState.PLANNING
-        context.state_history.append(AgentState.PLANNING)
-        append_state_transition(
-            context,
-            session_id=context.session_id,
-            node="react",
-            from_state=previous_state,
-            to_state=context.current_state.value,
-        )
+        # The orchestrator already sets PLANNING before runtime dispatch.
         append_timeline_event(
             context,
             session_id=context.session_id,
@@ -230,12 +217,10 @@ class Orchestrator:
             context=context,
             guardrail_config=self.guardrail_config,
         )
-        append_state_transition(
-            context,
-            session_id=context.session_id,
+        context.transition_to(
+            ExecutionState.OBSERVING,
+            decision={"type": "react_completed"},
             node="react",
-            from_state=AgentState.PLANNING.value,
-            to_state=AgentState.OBSERVATION.value,
             duration_ms=timer.elapsed_ms(),
         )
         append_timeline_event(
@@ -261,17 +246,6 @@ class Orchestrator:
             event_type="graph.started",
             status="started",
         )
-        previous_state = context.current_state.value
-        context.current_state = AgentState.PLANNING
-        context.state_history.append(AgentState.PLANNING)
-        append_state_transition(
-            context,
-            session_id=session_id,
-            node="graph",
-            from_state=previous_state,
-            to_state=context.current_state.value,
-            duration_ms=timer.elapsed_ms(),
-        )
         checkpointer = self._build_langgraph_checkpointer()
         state = await self.graph_builder.ainvoke(
             {
@@ -286,15 +260,10 @@ class Orchestrator:
             config={"configurable": {"thread_id": session_id}},
         )
         context.metadata["timeline"] = state.get("timeline", context.metadata.get("timeline", []))
-        previous_state = context.current_state.value
-        context.current_state = AgentState.OBSERVATION
-        context.state_history.append(AgentState.OBSERVATION)
-        append_state_transition(
-            context,
-            session_id=session_id,
+        context.transition_to(
+            ExecutionState.OBSERVING,
+            decision={"type": "graph_completed"},
             node="graph",
-            from_state=previous_state,
-            to_state=context.current_state.value,
             duration_ms=timer.elapsed_ms(),
         )
         append_timeline_event(
