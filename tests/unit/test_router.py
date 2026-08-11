@@ -1,51 +1,72 @@
-from src.router import Router
+from src.agents.agent_descriptor import AgentDescriptor
+from src.agents.base_agent import BaseAgent
+from src.router import MessageRouter, RoutingResult
+
+
+class DummyAgent(BaseAgent):
+    def initialize(self):
+        pass
+
+    async def handle(self, task, context):
+        return ""
+
+
+def descriptor(name: str, capabilities: list[str]) -> AgentDescriptor:
+    return AgentDescriptor(
+        name=name,
+        description="test agent",
+        capabilities=capabilities,
+        agent_class=DummyAgent,
+    )
 
 
 def test_router_constructs():
-    router = Router(
-        agent_capabilities={
-            "weather_agent": ["weather", "temperature", "forecast"],
-            "science": ["why", "how does", "what is"],
-        }
+    router = MessageRouter(
+        descriptors=[
+            descriptor("weather_agent", ["weather", "temperature", "forecast"]),
+            descriptor("science", ["why", "how does", "what is"]),
+        ]
     )
 
     assert router is not None
 
 
 def test_weather_route():
-    router = Router(
-        agent_capabilities={
-            "weather_agent": ["weather", "temperature", "forecast"],
-        }
+    router = MessageRouter(
+        descriptors=[
+            descriptor("weather_agent", ["weather", "temperature", "forecast"]),
+        ]
     )
 
-    agent, confidence = router.route_message("what is the weather in Seattle")
+    result = router.route_message("what is the weather in Seattle")
 
-    assert agent == "weather_agent"
-    assert confidence > 0
+    assert isinstance(result, RoutingResult)
+    assert result.agent_name == "weather_agent"
+    assert result.confidence > 0
 
 
 def test_science_route():
-    router = Router(
-        agent_capabilities={
-            "science": ["why", "how does", "what is"],
-        }
+    router = MessageRouter(
+        descriptors=[
+            descriptor("science", ["why", "how does", "what is"]),
+        ]
     )
 
-    agent, confidence = router.route_message("how does gravity work")
+    result = router.route_message("how does gravity work")
 
-    assert agent == "science"
-    assert confidence > 0
+    assert isinstance(result, RoutingResult)
+    assert result.agent_name == "science"
+    assert result.confidence > 0
 
 
 def test_general_fallback():
-    router = Router(
-        agent_capabilities={
-            "weather_agent": ["weather"],
-        }
+    router = MessageRouter(
+        descriptors=[
+            descriptor("weather_agent", ["weather"]),
+        ]
     )
 
-    agent, confidence = router.route_message("hello there")
+    result = router.route_message("hello there")
 
-    assert agent == "general"
-    assert confidence == 0.0
+    assert result.agent_name == "general"
+    assert result.confidence == 0.0

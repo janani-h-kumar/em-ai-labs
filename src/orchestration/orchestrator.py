@@ -7,6 +7,8 @@ import time
 from pathlib import Path
 from typing import Any
 
+from langgraph.checkpoint.base import BaseCheckpointSaver
+
 from src.guardrails import GuardrailConfig
 from src.guardrails.output_guardrail import OutputGuardrail
 from src.memory.base_memory import BaseMemory
@@ -293,7 +295,9 @@ class Orchestrator:
     def _approval_enabled(self) -> bool:
         return bool(self._config_get("runtime.langgraph.approval.enabled", False))
 
-    def _build_langgraph_checkpointer(self) -> object | None:
+    def _build_langgraph_checkpointer(
+        self,
+    ) -> BaseCheckpointSaver[Any] | None:
         enabled = bool(self._config_get("runtime.langgraph.checkpoint.enabled", False))
         if not enabled:
             return None
@@ -321,9 +325,13 @@ class Orchestrator:
                     "SQLite LangGraph checkpointing requires langgraph-checkpoint-sqlite"
                 ) from exc
 
-            if hasattr(SqliteSaver, "from_conn_string"):
-                return SqliteSaver.from_conn_string(str(db_path))
-            return SqliteSaver(str(db_path))
+            import sqlite3
+
+            connection = sqlite3.connect(
+                str(db_path),
+                check_same_thread=False,
+            )
+            return SqliteSaver(connection)
 
         raise ValueError(f"Unsupported LangGraph checkpoint backend: {backend}")
 

@@ -1,4 +1,5 @@
 from fastapi import FastAPI
+
 from src.application_service import ApplicationService
 
 app = FastAPI()

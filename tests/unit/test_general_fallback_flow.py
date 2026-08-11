@@ -33,10 +33,21 @@ async def test_executor_routes_and_creates_general_agent():
         mock_registry.create_instance.return_value = mock_agent_instance
 
         # Create router and executor
+        from src.agents.agent_descriptor import AgentDescriptor
+
+        class MockWeatherAgent:
+            name = "weather_agent"
+            capabilities = ["weather", "temperature"]
+
         router = MessageRouter(
-            agent_capabilities={
-                "weather_agent": ["weather", "temperature"],
-            }
+            descriptors=[
+                AgentDescriptor(
+                    name="weather_agent",
+                    description="Weather assistant",
+                    capabilities=MockWeatherAgent.capabilities,
+                    agent_class=MockWeatherAgent,
+                )
+            ]
         )
 
         executor = Executor(
@@ -123,16 +134,13 @@ async def test_full_flow_general_agent_discovery_to_execution():
                     # Create router from agent metadata
                     from src.router import MessageRouter
 
-                    agent_capabilities = {
-                        name: descriptor.capabilities
-                        for name, descriptor in registry.agents.items()
-                    }
-
-                    router = MessageRouter(agent_capabilities=agent_capabilities)
+                    router = MessageRouter(descriptors=registry.descriptors())
 
                     # Verify routing
-                    agent_name, confidence = router.route_message("hello there")
-                    assert agent_name == "general", "Unmatched message should route to general"
+                    routing = router.route_message("hello there")
+                    assert routing.agent_name == "general", (
+                        "Unmatched message should route to general"
+                    )
 
                     # Verify executor can handle the route
                     from src.orchestration.executor import Executor

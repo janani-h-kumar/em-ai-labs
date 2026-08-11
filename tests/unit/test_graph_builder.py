@@ -1,6 +1,9 @@
 import asyncio
 
-from src.orchestration.graph_builder import GraphBuilder, HumanApprovalRequiredError
+from src.orchestration.graph_builder import (
+    GraphBuilder,
+    HumanApprovalRequiredError,
+)
 from src.orchestration.models import ExecutionContext, Task
 
 
@@ -11,7 +14,13 @@ class DummyProvider:
 
 class DummyPlanner:
     async def create_plan(self, provider, goal, context):
-        return [Task(id="task-1", description="demo task", assigned_agent="dummy")]
+        return [
+            Task(
+                id="task-1",
+                description="demo task",
+                assigned_agent="dummy",
+            )
+        ]
 
 
 class DummyExecutor:
@@ -20,7 +29,11 @@ class DummyExecutor:
 
 
 def test_graph_builder_state_shape_and_build():
-    builder = GraphBuilder(planner=DummyPlanner(), executor=DummyExecutor())
+    builder = GraphBuilder(
+        planner=DummyPlanner(),
+        executor=DummyExecutor(),
+    )
+
     graph = builder.build()
     compiled = builder.compile()
 
@@ -30,16 +43,29 @@ def test_graph_builder_state_shape_and_build():
 
 
 def test_graph_builder_checkpoint_factory_uses_sqlite_saver():
-    builder = GraphBuilder(planner=DummyPlanner(), executor=DummyExecutor())
-    graph, checker = builder.build_with_checkpoint(db_path=":memory:")
+    builder = GraphBuilder(
+        planner=DummyPlanner(),
+        executor=DummyExecutor(),
+    )
+
+    graph, checker = builder.build_with_checkpoint(
+        db_path=":memory:",
+    )
 
     assert graph is not None
     assert checker is not None
 
 
 def test_graph_builder_can_execute_via_async_graph_entrypoint():
-    builder = GraphBuilder(planner=DummyPlanner(), executor=DummyExecutor())
-    context = ExecutionContext(session_id="sess-1", goal="demo goal")
+    builder = GraphBuilder(
+        planner=DummyPlanner(),
+        executor=DummyExecutor(),
+    )
+
+    context = ExecutionContext(
+        session_id="sess-1",
+        goal="demo goal",
+    )
 
     result = asyncio.run(
         builder.ainvoke(
@@ -55,10 +81,30 @@ def test_graph_builder_can_execute_via_async_graph_entrypoint():
 
     assert result["plan"][0]["id"] == "task-1"
     assert result["plan"][0]["dependencies"] == []
+
     assert result["results"][0]["task_id"] == "task-1"
-    assert result["results"][0]["result"] == {"task_id": "task-1"}
-    assert any(event["event_type"] == "graph.planner.completed" for event in result["timeline"])
-    assert any(event["event_type"] == "graph.executor.completed" for event in result["timeline"])
+    assert result["results"][0]["result"] == {
+        "task_id": "task-1",
+    }
+
+    event_types = [event["event_type"] for event in result["timeline"]]
+
+    assert "graph.planner.started" in event_types
+    assert "graph.planner.completed" in event_types
+    assert "graph.executor.started" in event_types
+    assert "executor.task.started" in event_types
+    assert "executor.task.completed" in event_types
+    assert "graph.executor.completed" in event_types
+
+    assert event_types.index("graph.planner.started") < event_types.index("graph.planner.completed")
+
+    assert event_types.index("graph.planner.completed") < event_types.index(
+        "graph.executor.started"
+    )
+
+    assert event_types.index("graph.executor.started") < event_types.index(
+        "graph.executor.completed"
+    )
 
 
 def test_graph_builder_approval_point_is_opt_in():
@@ -67,7 +113,11 @@ def test_graph_builder_approval_point_is_opt_in():
         executor=DummyExecutor(),
         approval_enabled=True,
     )
-    context = ExecutionContext(session_id="sess-1", goal="demo goal")
+
+    context = ExecutionContext(
+        session_id="sess-1",
+        goal="demo goal",
+    )
 
     try:
         asyncio.run(
@@ -81,6 +131,8 @@ def test_graph_builder_approval_point_is_opt_in():
                 }
             )
         )
-        assert False, "Expected HumanApprovalRequiredError"
+
+        raise AssertionError("Expected HumanApprovalRequiredError")
+
     except HumanApprovalRequiredError as exc:
         assert "approval" in str(exc).lower()

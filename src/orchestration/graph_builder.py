@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import logging
-from typing import Any, TypedDict
+from typing import Any, TypedDict, cast
 
+from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.graph import END, StateGraph
 
 from src.observability.timeline import (
@@ -31,6 +32,7 @@ class GraphState(TypedDict, total=False):
     final_response: str
     timeline: list[dict]
     metadata: dict[str, Any]
+    approved: bool
     error: dict[str, Any] | str | None
 
 
@@ -50,7 +52,7 @@ class GraphBuilder:
         self.planner = planner or Planner()
         self.executor = executor
         self.approval_enabled = approval_enabled
-        self._graph = None
+        self._graph: StateGraph | None = None
 
     def build(self) -> StateGraph:
         """Construct the workflow graph."""
@@ -64,6 +66,7 @@ class GraphBuilder:
             context = state["context"]
             session_id = state.get("session_id") or context.session_id
             provider = state.get("provider")
+
             append_timeline_event(
                 state,
                 session_id=session_id,
@@ -71,6 +74,7 @@ class GraphBuilder:
                 event_type="graph.planner.started",
                 status="started",
             )
+
             if provider is None:
                 error = "Graph state must carry a provider for graph planning"
                 state["error"] = error
@@ -78,20 +82,13 @@ class GraphBuilder:
                     state,
                     session_id=session_id,
                     node="planner",
-                    event_type="planner.failed",
+                    event_type="graph.planner.failed",
                     status="failed",
                     duration_ms=timer.elapsed_ms(),
                     attributes={"error": error},
                 )
                 raise ValueError(error)
 
-            append_timeline_event(
-                state,
-                session_id=session_id,
-                node="planner",
-                event_type="planner.started",
-                status="started",
-            )
             try:
                 plan = await self.planner.create_plan(provider, state["goal"], context)
                 state["plan"] = [_task_to_state(task) for task in plan]
@@ -99,7 +96,7 @@ class GraphBuilder:
                     state,
                     session_id=session_id,
                     node="planner",
-                    event_type="planner.completed",
+                    event_type="graph.planner.completed",
                     status="completed",
                     duration_ms=timer.elapsed_ms(),
                     attributes={"task_count": len(plan)},
@@ -110,18 +107,23 @@ class GraphBuilder:
                     state,
                     session_id=session_id,
                     node="planner",
-                    event_type="planner.failed",
+                    event_type="graph.planner.failed",
                     status="failed",
                     duration_ms=timer.elapsed_ms(),
-                    attributes={"error": str(exc), "error_type": type(exc).__name__},
+                    attributes={
+                        "error": str(exc),
+                        "error_type": type(exc).__name__,
+                    },
                 )
                 raise
+
             return state
 
         async def execute_node(state: GraphState) -> GraphState:
             timer = TimelineTimer()
             context = state["context"]
             session_id = state.get("session_id") or context.session_id
+
             append_timeline_event(
                 state,
                 session_id=session_id,
@@ -129,6 +131,7 @@ class GraphBuilder:
                 event_type="graph.executor.started",
                 status="started",
             )
+
             if self.approval_enabled and not state.get("approved", False):
                 append_timeline_event(
                     state,
@@ -150,7 +153,7 @@ class GraphBuilder:
                     state,
                     session_id=session_id,
                     node="executor",
-                    event_type="executor.failed",
+                    event_type="graph.executor.failed",
                     status="failed",
                     duration_ms=timer.elapsed_ms(),
                     attributes={"error": error},
@@ -159,18 +162,12 @@ class GraphBuilder:
 
             plan = state.get("plan", [])
             results: list[object] = []
-            append_timeline_event(
-                state,
-                session_id=session_id,
-                node="executor",
-                event_type="executor.started",
-                status="started",
-                attributes={"task_count": len(plan)},
-            )
+
             try:
                 for step in plan:
                     task = _state_to_task(step)
                     task_timer = TimelineTimer()
+
                     append_timeline_event(
                         state,
                         session_id=session_id,
@@ -183,7 +180,9 @@ class GraphBuilder:
                             "description": preview_value(task.description, 200),
                         },
                     )
+
                     result = await self.executor.execute_task(task, context)
+
                     results.append(
                         {
                             "task_id": task.id,
@@ -193,6 +192,7 @@ class GraphBuilder:
                             "result": result,
                         }
                     )
+
                     append_timeline_event(
                         state,
                         session_id=session_id,
@@ -206,7 +206,9 @@ class GraphBuilder:
                             "result_preview": preview_value(result),
                         },
                     )
+
                     state["results"] = results
+
                 append_timeline_event(
                     state,
                     session_id=session_id,
@@ -225,9 +227,13 @@ class GraphBuilder:
                     event_type="graph.executor.failed",
                     status="failed",
                     duration_ms=timer.elapsed_ms(),
-                    attributes={"error": str(exc), "error_type": type(exc).__name__},
+                    attributes={
+                        "error": str(exc),
+                        "error_type": type(exc).__name__,
+                    },
                 )
                 raise
+
             return state
 
         builder.add_node("planner", plan_node)
@@ -235,10 +241,14 @@ class GraphBuilder:
         builder.add_edge("planner", "executor")
         builder.add_edge("executor", END)
         builder.set_entry_point("planner")
+
         self._graph = builder
         return self._graph
 
-    def compile(self, checkpointer: object | None = None):
+    def compile(
+        self,
+        checkpointer: BaseCheckpointSaver[Any] | bool | None = None,
+    ) -> Any:
         """Compile the workflow into an invokable LangGraph app."""
         return self.build().compile(checkpointer=checkpointer)
 
@@ -246,26 +256,29 @@ class GraphBuilder:
         self,
         initial_state: GraphState,
         *,
-        checkpointer: object | None = None,
+        checkpointer: BaseCheckpointSaver[Any] | bool | None = None,
         config: dict[str, Any] | None = None,
     ) -> GraphState:
         """Compile and asynchronously invoke the graph."""
         app = self.compile(checkpointer=checkpointer)
-        return await app.ainvoke(initial_state, config=config)
+        result = await app.ainvoke(initial_state, config=config)
+        return cast(GraphState, result)
 
     def build_with_checkpoint(
         self, db_path: str = "checkpoints.sqlite"
-    ) -> tuple[StateGraph, object]:
-        """Create a graph with a checkpointer when the backend is available."""
+    ) -> tuple[StateGraph, BaseCheckpointSaver[Any]]:
+        """Create a graph with an in-memory checkpointer.
+
+        ``db_path`` is retained for API compatibility. SQLite checkpoint
+        lifecycle requires an explicitly managed connection; the orchestrator
+        owns that concern separately.
+        """
+        del db_path
         graph = self.build()
 
-        try:
-            from langgraph.checkpoint.memory import MemorySaver
+        from langgraph.checkpoint.memory import MemorySaver
 
-            return graph, MemorySaver()
-        except Exception as exc:  # pragma: no cover - import fallback path
-            logger.warning("LangGraph checkpointer unavailable: %s", exc)
-            return graph, None
+        return graph, MemorySaver()
 
 
 def _task_to_state(task: Task) -> dict[str, Any]:
@@ -284,6 +297,7 @@ def _task_to_state(task: Task) -> dict[str, Any]:
 def _state_to_task(state: dict[str, Any]) -> Task:
     """Rebuild a Task dataclass from graph state."""
     status_value = state.get("status", TaskStatus.PENDING.value)
+
     try:
         status = TaskStatus(status_value)
     except ValueError:
@@ -300,6 +314,7 @@ def _state_to_task(state: dict[str, Any]) -> Task:
 
 
 def _error_to_state(node: str, exc: Exception) -> dict[str, Any]:
+    """Convert an exception into serializable graph error state."""
     return {
         "node": node,
         "type": type(exc).__name__,

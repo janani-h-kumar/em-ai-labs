@@ -32,65 +32,70 @@ def _register_stub(module_name: str, *, package: bool = False) -> None:
 
 
 # Lightweight stubs for optional external dependencies to allow offline unit tests.
-# These create minimal modules/classes expected by the code under test so import
-# time does not fail when packages (langchain, anthropic, langchain_core) are
-# not installed in the test environment. When those packages are available, we
-# leave them alone so submodules such as langchain_core.runnables can resolve
-# normally.
+# IMPORTANT: only install stubs when the real package is unavailable. In particular,
+# never replace installed langchain_core.prompts/chat_history modules because LangChain
+# imports additional symbols (for example BasePromptTemplate) from those modules.
+_langchain_available = importlib.util.find_spec("langchain") is not None
+_langchain_core_available = importlib.util.find_spec("langchain_core") is not None
+_langchain_ollama_available = importlib.util.find_spec("langchain_ollama") is not None
+
 _register_stub("anthropic")
 _register_stub("langchain", package=True)
-_register_stub("langchain.agents")
 _register_stub("langchain_core", package=True)
-_register_stub("langchain_core.tools")
 
-if "langchain.agents" in sys.modules and not getattr(
-    sys.modules["langchain.agents"], "AgentExecutor", None
-):
+if not _langchain_available:
+    _register_stub("langchain.agents")
     sys.modules["langchain.agents"].AgentExecutor = type("AgentExecutor", (), {})
     sys.modules["langchain.agents"].create_tool_calling_agent = lambda *a, **k: None
 
+if not _langchain_core_available:
+    _register_stub("langchain_core.tools")
 
-if "langchain_core.tools" in sys.modules and not getattr(
-    sys.modules["langchain_core.tools"], "Tool", None
-):
+    if "langchain_core.tools" in sys.modules and not getattr(
+        sys.modules["langchain_core.tools"], "Tool", None
+    ):
 
-    def _tool_factory(name: str, description: str = "", args_schema=None, func=None):
-        return types.SimpleNamespace(
-            name=name, description=description, args_schema=args_schema, func=func
-        )
+        def _tool_factory(name: str, description: str = "", args_schema=None, func=None):
+            return types.SimpleNamespace(
+                name=name,
+                description=description,
+                args_schema=args_schema,
+                func=func,
+            )
 
-    sys.modules["langchain_core.tools"].Tool = _tool_factory
+        sys.modules["langchain_core.tools"].Tool = _tool_factory
 
-# chat_history
-if "langchain_core.chat_history" not in sys.modules:
+    # chat_history
     sys.modules["langchain_core.chat_history"] = types.ModuleType("langchain_core.chat_history")
-sys.modules["langchain_core.chat_history"].InMemoryChatMessageHistory = type(
-    "InMemoryChatMessageHistory", (), {"messages": []}
-)
+    sys.modules["langchain_core.chat_history"].InMemoryChatMessageHistory = type(
+        "InMemoryChatMessageHistory", (), {"messages": []}
+    )
 
-# prompts
-if "langchain_core.prompts" not in sys.modules:
+    # prompts
     sys.modules["langchain_core.prompts"] = types.ModuleType("langchain_core.prompts")
-sys.modules["langchain_core.prompts"].ChatPromptTemplate = type(
-    "ChatPromptTemplate", (), {"from_messages": staticmethod(lambda msgs: None)}
-)
-sys.modules["langchain_core.prompts"].MessagesPlaceholder = type("MessagesPlaceholder", (), {})
+    sys.modules["langchain_core.prompts"].ChatPromptTemplate = type(
+        "ChatPromptTemplate", (), {"from_messages": staticmethod(lambda msgs: None)}
+    )
+    sys.modules["langchain_core.prompts"].MessagesPlaceholder = type("MessagesPlaceholder", (), {})
 
-# runnables.history
-if "langchain_core.runnables.history" not in sys.modules:
+    # runnables.history
     sys.modules["langchain_core.runnables.history"] = types.ModuleType(
         "langchain_core.runnables.history"
     )
-sys.modules["langchain_core.runnables.history"].RunnableWithMessageHistory = type(
-    "RunnableWithMessageHistory", (), {}
-)
+    sys.modules["langchain_core.runnables.history"].RunnableWithMessageHistory = type(
+        "RunnableWithMessageHistory", (), {}
+    )
 
-# langchain_ollama stub
-if "langchain_ollama" not in sys.modules:
+if not _langchain_ollama_available:
     sys.modules["langchain_ollama"] = types.ModuleType("langchain_ollama")
-sys.modules["langchain_ollama"].ChatOllama = type(
-    "ChatOllama", (), {"__init__": lambda self, *a, **k: None, "invoke": lambda self, msg: "pong"}
-)
+    sys.modules["langchain_ollama"].ChatOllama = type(
+        "ChatOllama",
+        (),
+        {
+            "__init__": lambda self, *a, **k: None,
+            "invoke": lambda self, msg: "pong",
+        },
+    )
 
 
 @pytest.fixture

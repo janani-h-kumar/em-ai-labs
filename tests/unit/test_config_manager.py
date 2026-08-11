@@ -110,12 +110,22 @@ runtime:
 # -------------------------------------------------
 # 7. validate_startup fails when required keys missing
 # -------------------------------------------------
-def test_validate_startup_fails(tmp_path):
+def test_validate_startup_fails(tmp_path, monkeypatch):
     file = tmp_path / "config.yaml"
     file.write_text("""
 runtime:
   orchestration: langchain
 """)
+
+    # The ConfigManager intentionally merges OS environment variables into
+    # config. Clear the required keys so this test is deterministic even when
+    # the developer machine has a configured .env/OS environment.
+    for key in (
+        "OLLAMA_BASE_URL",
+        "OPENWEATHER_API_KEY",
+        "OPENWEATHER_BASE_URL",
+    ):
+        monkeypatch.delenv(key, raising=False)
 
     cfg = ConfigManager(str(file))
 

@@ -88,23 +88,39 @@ def test_p0_agent_factory_uses_introspection():
 
 def test_p0_router_is_metadata_driven():
     """MessageRouter reads from agent metadata, not hardcoded."""
+    from src.agents.agent_descriptor import AgentDescriptor
     from src.router import MessageRouter
 
-    # Router should accept capabilities mapping
+    class MockGeneralAgent:
+        name = "general"
+        capabilities = ["general", "fallback"]
+
+    class MockWeatherAgent:
+        name = "weather"
+        capabilities = ["weather", "temperature"]
+
     router = MessageRouter(
-        agent_capabilities={
-            "general": ["general", "fallback"],
-            "weather": ["weather", "temperature"],
-        }
+        descriptors=[
+            AgentDescriptor(
+                name="general",
+                description="Fallback general-purpose assistant",
+                capabilities=MockGeneralAgent.capabilities,
+                agent_class=MockGeneralAgent,
+            ),
+            AgentDescriptor(
+                name="weather",
+                description="Weather assistant",
+                capabilities=MockWeatherAgent.capabilities,
+                agent_class=MockWeatherAgent,
+            ),
+        ]
     )
 
-    # Routing should work based on keywords
-    agent, confidence = router.route_message("what is the weather")
-    assert agent == "weather"
+    result = router.route_message("what is the weather")
+    assert result.agent_name == "weather"
 
-    # Fallback should work for unmatched
-    agent, confidence = router.route_message("hello there")
-    assert agent == "general"
+    result = router.route_message("hello there")
+    assert result.agent_name == "general"
 
 
 def test_p0_fallback_works_end_to_end():
@@ -122,21 +138,18 @@ def test_p0_fallback_works_end_to_end():
     container = ServiceContainer(config)
     registry = AgentRegistry(container=container)
 
-    # Build router from metadata
-    agent_capabilities = {
-        name: descriptor.capabilities for name, descriptor in registry.agents.items()
-    }
-    router = MessageRouter(agent_capabilities=agent_capabilities)
+    # Build router directly from registry metadata.
+    router = MessageRouter(descriptors=registry.descriptors())
 
     # Route unmatched message
-    agent_name, confidence = router.route_message("hello there")
-    assert agent_name == "general"
+    routing = router.route_message("hello there")
+    assert routing.agent_name == "general"
 
     # Agent should be in registry
-    assert registry.has_agent(agent_name)
+    assert registry.has_agent(routing.agent_name)
 
     # Should be able to create instance
-    agent_instance = registry.create_instance(agent_name)
+    agent_instance = registry.create_instance(routing.agent_name)
     assert agent_instance is not None
 
     # Agent should be initialized
@@ -169,12 +182,12 @@ def test_p0_no_hardcoded_agent_references():
     """Framework components don't reference specific agents."""
     from src.agents.agent_registry import AgentRegistry
     from src.orchestration.executor import Executor
-    from src.router import Router
+    from src.router import MessageRouter
 
     # These components should not mention "weather", "general", etc.
     # They work purely through agent metadata and registry
 
-    router_source = Router.__module__
+    router_source = MessageRouter.__module__
     executor_source = Executor.__module__
     registry_source = AgentRegistry.__module__
 
