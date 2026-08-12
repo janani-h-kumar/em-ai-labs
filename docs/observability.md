@@ -1,178 +1,166 @@
-# Observability Setup
+# Observability
 
-This project uses structured JSON logs plus OpenTelemetry spans. The local
-development path is intentionally local-only: spans can be written to a JSONL
-file and inspected without sending data to a hosted service.
+## P0 architecture
 
-## Current Span Flow
-
-A normal request produces a trace shaped like this:
+`em-ai-labs` uses OpenTelemetry for application tracing and sends traces over
+OTLP to Jaeger during local development:
 
 ```text
-application_service.handle
-  orchestrator.run
-    planner.create_plan
-      llm.chat_completion
-    executor.execute_task
-      agent.handle
-        tool.execute
-          tool.api_request
-        llm.chat_completion
+Agent Framework
+      |
+      | OpenTelemetry SDK
+      v
+OTLP exporter
+      |
+      v
+Jaeger all-in-one
+      |
+      v
+Jaeger UI
 ```
 
-Some spans only appear when the code path uses them. For example,
-`planner.create_plan` only contains an LLM call when the planner heuristic
-decides the request is compound enough to ask the local model for a plan.
+There is deliberately **no custom dashboard, database, Prometheus, Loki, or
+trace-file exporter** in the application.
 
-## Span Attributes
-
-`application_service.handle` captures request-level metadata:
-
-```text
-request_id
-session_id
-request_count
-message_length
-request_latency_ms
-```
-
-`orchestrator.run` captures orchestration and memory timing:
-
-```text
-session_id
-goal
-memory_latency_ms
-orchestrator_latency_ms
-```
-
-`planner.create_plan` captures planning behavior:
-
-```text
-session_id
-goal
-planner.heuristic_skip
-planner_latency_ms
-```
-
-`executor.execute_task` captures task routing and status:
-
-```text
-task.id
-task.description
-session.id
-correlation.id
-agent.name
-duration_ms
-task.status
-```
-
-`agent.handle` captures the selected agent call:
-
-```text
-agent_name
-task_id
-session_id
-agent_latency_ms
-```
-
-`tool.execute` captures tool execution:
-
-```text
-tool_name
-args
-kwargs
-tool_latency_ms
-```
-
-`tool.api_request` captures outbound network/API calls made by tools:
-
-```text
-tool_name
-api_service
-http_method
-url
-http.status_code
-api_latency_ms
-```
-
-`llm.chat_completion` captures local LLM latency and token usage:
-
-```text
-llm_provider
-model_name
-message_count
-max_tokens
-has_system_prompt
-llm_latency_ms
-prompt_tokens
-completion_tokens
-total_tokens
-```
-
-The LLM span does not store prompt text or model responses. It records metadata
-needed for latency and cost-style analysis.
-
-## Local JSONL Export
-
-For local development, use the file exporter:
+Start local Jaeger with:
 
 ```powershell
-$env:OTEL_TRACES_EXPORTER = "file"
-$env:OTEL_TRACE_FILE = "logs/traces.jsonl"
+docker compose -f docker-compose.observability.yml up -d
 ```
 
-Then run the app normally. Completed spans are appended to `logs/traces.jsonl`,
-one JSON object per line.
+Open Jaeger at `http://localhost:16686`.
 
-The same values are included in `.env.dev` and `.env.example`. The tracing
-module loads `.env` and the active `.env.<APP_ENV>` file before choosing an
-exporter, so `.env.dev` is enough for the normal local runtime path. Shell
-environment variables still win when you want to override the file values.
+The application defaults to:
 
-## Viewing The File Locally
+```text
+OTEL_TRACES_EXPORTER=otlp
+OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317
+```
 
-Basic PowerShell inspection:
+For tests or environments where export should be disabled:
 
 ```powershell
-Get-Content logs\traces.jsonl
+$env:OTEL_TRACES_EXPORTER = "none"
 ```
 
-Pretty print when `jq` is installed:
+## Span hierarchy
 
-```powershell
-Get-Content logs\traces.jsonl | jq .
+The primary execution trace is structured as:
+
+```text
+request
+  |
+  +-- orchestrator.run
+       |
+       +-- planner.create_plan
+       |
+       +-- executor.execute_task
+       |     |
+       |     +-- agent.run
+       |           |
+       |           +-- llm.call
+       |           +-- tool.call
+       |                 |
+       |                 +-- tool.api_request
+       |
+       +-- output guardrail / completion
 ```
 
-Show only LLM spans:
+The important canonical spans are:
 
-```powershell
-Get-Content logs\traces.jsonl | jq 'select(.name == "llm.chat_completion")'
+- `agent.run`
+- `llm.call`
+- `tool.call`
+- `tool.api_request`
+
+The application also retains useful orchestration spans such as
+`orchestrator.run`, `planner.create_plan`, and `executor.execute_task`.
+
+## Common attributes
+
+### Agent
+
+- `agent.name`
+- `agent.version`
+- `execution.id`
+- `session.id`
+- `iteration`
+- `outcome`
+- `duration_ms`
+
+### LLM
+
+- `provider`
+- `model`
+- `input_tokens`
+- `output_tokens`
+- `total_tokens`
+- `context_size_tokens`
+- `latency_ms`
+- `response_size_bytes`
+- `outcome`
+
+Provider-specific prompt/completion aliases may also be present for backwards
+compatibility, but `input_tokens` and `output_tokens` are the canonical names.
+Prompt or completion text is never stored in spans.
+
+### Tool
+
+- `tool.name`
+- `tool_name`
+- `duration_ms`
+- `response_size_bytes`
+- `outcome`
+- `error.type`
+
+### API request
+
+- `tool.name` / `tool_name`
+- `api_service`
+- `http.status_code`
+- `api_latency_ms`
+- `response_size_bytes`
+- `outcome`
+- `error.type`
+
+## External API health semantics
+
+Tool construction must not call an external service. A tool being registered
+means its configuration and dependencies can be constructed; it does **not**
+mean the remote API is healthy.
+
+For example, a weather API response of HTTP 401 is recorded as:
+
+```text
+weather_tool
+  outcome = error
+  http.status_code = 401
+  error.type = WeatherAuthenticationError
+  api_latency_ms = ...
 ```
 
-Show token and latency fields for LLM spans:
+The API request span is the source of truth for remote-service health. This
+prevents misleading messages such as `API reachable (401)` followed by
+`client initialized successfully`.
 
-```powershell
-Get-Content logs\traces.jsonl |
-  jq 'select(.name == "llm.chat_completion") |
-  {trace_id, duration_ms, model: .attributes.model_name, prompt_tokens: .attributes.prompt_tokens, completion_tokens: .attributes.completion_tokens, total_tokens: .attributes.total_tokens}'
-```
+## Dependency failures
 
-## Future OTLP Export
+Agent constructor dependencies are required to resolve before an agent is
+created. `AgentFactory` fails fast with `AgentDependencyError` when a required
+dependency is missing instead of allowing Python to raise a later
+`TypeError` from the constructor.
 
-When you are ready to send traces to a collector such as Jaeger or an
-OpenTelemetry Collector, switch the exporter mode:
+## Logging correlation
 
-```powershell
-$env:OTEL_TRACES_EXPORTER = "otlp"
-$env:OTEL_EXPORTER_OTLP_ENDPOINT = "http://localhost:4317"
-```
+Structured logs use the active OpenTelemetry context. During a normal request,
+`trace_id` and `span_id` therefore point directly to the corresponding Jaeger
+trace/span. No second application-level trace ID is created.
 
-The instrumentation calls do not need to change. Only the exporter mode changes
-from `file` to `otlp`.
+`correlation_id` remains as request/application metadata for compatibility, but
+OpenTelemetry is the authoritative trace context.
 
-## Privacy Notes
+## P0 scope
 
-The local JSONL exporter writes span names, IDs, timings, status, events, and
-attributes. Current LLM spans intentionally avoid prompt and completion bodies.
-Some existing orchestration spans include the request goal or task description;
-avoid sharing trace files externally if those may contain sensitive user input.
+P0 is intentionally trace-first. Token usage and latency are recorded on LLM
+spans so cost analysis can be performed from traces. A separate metrics backend
+can be added later without changing the trace model.

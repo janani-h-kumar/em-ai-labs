@@ -106,6 +106,7 @@ class BaseAgent(ABC):
 
     # Metadata contract (subclasses should override)
     name: str = ""
+    version: str = "1.0"
     description: str = ""
     capabilities: list[str] | None = None
 

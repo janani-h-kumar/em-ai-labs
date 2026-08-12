@@ -1,4 +1,4 @@
-# src/tools/base_tool.py
+"""Base tool contract and standardized tool-call telemetry."""
 
 import logging
 import time
@@ -16,9 +16,7 @@ logger = logging.getLogger(__name__)
 
 
 class BaseTool(ABC):
-    """
-    Abstract Base Class for enterprise-grade tools.
-    """
+    """Abstract base class for all framework tools."""
 
     name: str
     description: str
@@ -29,72 +27,56 @@ class BaseTool(ABC):
 
     @abstractmethod
     def _run(self, *args: Any, **kwargs: Any) -> str:
-        """
-        Core execution logic implemented by subclasses.
-        """
+        """Core execution logic implemented by subclasses."""
         raise NotImplementedError
 
-    def _safe_execute(self, *args: Any, **kwargs: Any) -> str:
-        """
-        Standardized execution wrapper with exception shielding.
-        """
+    @staticmethod
+    def _response_size_bytes(value: Any) -> int | None:
+        if value is None:
+            return None
+        if isinstance(value, (bytes, bytearray)):
+            return len(value)
+        try:
+            return len(str(value).encode("utf-8"))
+        except Exception:
+            return None
 
-        def _size_bytes(value: Any) -> int | None:
-            if value is None:
-                return None
-            if isinstance(value, (bytes, bytearray)):
-                return len(value)
-            try:
-                return len(str(value).encode("utf-8"))
-            except Exception:
-                return None
+    def _safe_execute(self, *args: Any, **kwargs: Any) -> str:
+        """Execute the tool under the canonical ``tool.call`` span."""
+        tool_name = getattr(self, "name", "unknown_tool")
+        start_time = time.perf_counter()
 
         with create_span(
-            "tool.execute",
-            tool_name=getattr(self, "name", "unknown_tool"),
-            tool=getattr(self, "name", "unknown_tool"),
-            decision="tool.execute",
-            args=str(args)[:200],
-            kwargs=str(kwargs)[:200],
+            "tool.call",
+            tool_name=tool_name,
+            tool=tool_name,
+            outcome="unknown",
         ) as span:
-            start_time = time.perf_counter()
             try:
                 result = self._run(*args, **kwargs)
                 duration_ms = round((time.perf_counter() - start_time) * 1000, 1)
-                span.set_attribute("tool_latency_ms", duration_ms)
-                result_size = _size_bytes(result)
-                if result_size is not None:
-                    span.set_attribute("result_size_bytes", result_size)
-                logger.info(
-                    "Tool execution completed",
-                    extra={
-                        "extra_data": {
-                            "tool_name": getattr(self, "name", "unknown_tool"),
-                            "tool_latency_ms": duration_ms,
-                        }
-                    },
-                )
-                return result
-
-            except Exception as e:
-                duration_ms = round((time.perf_counter() - start_time) * 1000, 1)
+                span.set_attribute("duration_ms", duration_ms)
                 span.set_attribute("latency_ms", duration_ms)
-                span.set_attribute("tool_latency_ms", duration_ms)
-                span.set_attribute("error.type", type(e).__name__)
-                span.set_attribute("error.message", str(e))
-                span.set_status(otel_trace.StatusCode.ERROR, str(e))
-                logger.exception(
-                    "Execution error in tool '%s'",
-                    self.name,
-                )
+                span.set_attribute("outcome", "success")
 
-                return f"Error executing tool '{self.name}': {str(e)}"
+                response_size = self._response_size_bytes(result)
+                if response_size is not None:
+                    span.set_attribute("response_size_bytes", response_size)
+
+                return result
+            except Exception as exc:
+                duration_ms = round((time.perf_counter() - start_time) * 1000, 1)
+                span.set_attribute("duration_ms", duration_ms)
+                span.set_attribute("latency_ms", duration_ms)
+                span.set_attribute("outcome", "error")
+                span.set_attribute("error.type", type(exc).__name__)
+                span.record_exception(exc)
+                span.set_status(otel_trace.StatusCode.ERROR, str(exc))
+                logger.exception("Execution error in tool '%s'", tool_name)
+                raise
 
     def to_langchain_tool(self) -> Tool:
-        """
-        Convert enterprise tool into LangChain-compatible Tool.
-        """
-
+        """Convert the enterprise tool into a LangChain-compatible tool."""
         return Tool(
             name=self.name,
             description=self.description,

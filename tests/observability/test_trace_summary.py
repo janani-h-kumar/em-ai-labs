@@ -10,7 +10,7 @@ from src.observability.trace_summary import (
 def test_format_trace_summary_with_tool_and_llm_spans():
     spans = [
         {
-            "name": "application_service.handle",
+            "name": "request",
             "trace_id": "trace-1",
             "attributes": {
                 "run_number": 18,
@@ -28,17 +28,17 @@ def test_format_trace_summary_with_tool_and_llm_spans():
             "start_time_unix_nano": 2,
         },
         {
-            "name": "tool.execute",
+            "name": "tool.call",
             "trace_id": "trace-1",
             "attributes": {
                 "tool_name": "weather_tool",
-                "tool_latency_ms": 243,
-                "result_size_bytes": 1229,
+                "duration_ms": 243,
+                "response_size_bytes": 1229,
             },
             "start_time_unix_nano": 3,
         },
         {
-            "name": "llm.chat_completion",
+            "name": "llm.call",
             "trace_id": "trace-1",
             "attributes": {
                 "latency_ms": 1890,
@@ -62,7 +62,7 @@ def test_format_trace_summary_with_tool_and_llm_spans():
 def test_render_trace_summary_from_file(tmp_path: Path):
     spans = [
         {
-            "name": "application_service.handle",
+            "name": "request",
             "trace_id": "trace-2",
             "attributes": {
                 "run_number": 42,

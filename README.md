@@ -25,6 +25,8 @@ BaseLLMProvider ──► OllamaProvider | ClaudeProvider    ← Provider layer 
 Memory (ConversationMemory → ChromaDB)                 ← Memory layer [Phase 3]
    │
 Observability (logging → OpenTelemetry → Jaeger)       ← O11y layer [Phase 5]
+
+**P0 observability is trace-only:** OpenTelemetry SDK → OTLP → local Jaeger. No custom dashboard, database, Prometheus, or Loki is part of the application. See `docs/observability.md`.
 ```
 
 ---

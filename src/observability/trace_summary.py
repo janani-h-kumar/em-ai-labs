@@ -49,7 +49,7 @@ def _find_span(spans: list[dict[str, Any]], name: str) -> dict[str, Any] | None:
 def _find_tool_span(spans: list[dict[str, Any]]) -> dict[str, Any] | None:
     for span in spans:
         attrs = _span_attributes(span)
-        if span.get("name") == "tool.execute" or attrs.get("tool_name") or attrs.get("tool"):
+        if span.get("name") == "tool.call" or attrs.get("tool_name") or attrs.get("tool"):
             return span
     return None
 
@@ -109,15 +109,17 @@ def format_trace_summary(
     if tool_span:
         attrs = _span_attributes(tool_span)
         tool_name = attrs.get("tool_name") or attrs.get("tool") or "tool"
-        latency = _format_duration(attrs.get("tool_latency_ms") or attrs.get("latency_ms"))
-        size = _format_bytes(attrs.get("result_size_bytes") or attrs.get("response_size_bytes"))
+        latency = _format_duration(
+            attrs.get("duration_ms") or attrs.get("tool_latency_ms") or attrs.get("latency_ms")
+        )
+        size = _format_bytes(attrs.get("response_size_bytes") or attrs.get("result_size_bytes"))
         lines.append("")
         lines.append(f"{tool_name}")
         lines.append(f"  {latency}")
         if size != "unknown":
             lines.append(f"  {size}")
 
-    llm_span = _find_span(filtered_spans, "llm.chat_completion")
+    llm_span = _find_span(filtered_spans, "llm.call") or _find_span(filtered_spans, "llm.chat_completion")
     if llm_span:
         attrs = _span_attributes(llm_span)
         latency = _format_duration(attrs.get("latency_ms") or attrs.get("llm_latency_ms"))

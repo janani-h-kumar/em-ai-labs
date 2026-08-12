@@ -16,6 +16,8 @@ from collections.abc import Callable
 from functools import wraps
 from typing import Any, TypeVar
 
+from opentelemetry import trace
+
 logger = logging.getLogger(__name__)
 F = TypeVar("F", bound=Callable[..., Any])
 
@@ -74,6 +76,7 @@ def retry_with_backoff(
         @wraps(func)
         def wrapper(*args: Any, **kwargs: Any) -> Any:
             last_exception = None
+            span = trace.get_current_span()
             for attempt in range(max_retries):
                 try:
                     logger.debug("Attempt %s/%s: %s", attempt + 1, max_retries, func.__name__)
@@ -94,6 +97,19 @@ def retry_with_backoff(
                         delay = base_delay * (backoff_factor**attempt)
                         jitter = delay * jitter_factor * (2 * random.random() - 1)
                         sleep_time = max(0.0, delay + jitter)
+
+                        if span.get_span_context().is_valid:
+                            span.set_attribute("retry_count", attempt + 1)
+                            span.set_attribute("retry_reason", type(e).__name__)
+                            span.set_attribute("retry_latency_ms", round(sleep_time * 1000, 1))
+                            span.add_event(
+                                "retry",
+                                {
+                                    "retry_count": attempt + 1,
+                                    "retry_reason": type(e).__name__,
+                                    "retry_latency_ms": round(sleep_time * 1000, 1),
+                                },
+                            )
 
                         logger.warning(
                             "%s failed (attempt %s/%s), retrying in %s seconds: %s",

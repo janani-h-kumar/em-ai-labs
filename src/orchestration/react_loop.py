@@ -80,6 +80,7 @@ class ReACTLoop:
         iteration = 0
         while not graph.all_completed() and iteration < effective_max_iterations:
             iteration += 1
+            context.metadata.setdefault("react", {})["current_iteration"] = iteration
 
             # --- Guardrail checks (both raise GuardrailViolationError on breach) ---
             try:

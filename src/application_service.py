@@ -91,13 +91,15 @@ class ApplicationService:
             start_time = time.perf_counter()
 
             with create_span(
-                "application_service.handle",
-                request_id=request_id,
-                session_id=request_id,
-                run_number=current_request,
-                request_count=current_request,
-                message_length=len(message) if isinstance(message, str) else 0,
-                decision="handle_request",
+                "request",
+                **{
+                    "execution.id": request_id,
+                    "session.id": request_id,
+                    "run_number": current_request,
+                    "request_count": current_request,
+                    "message_length": len(message) if isinstance(message, str) else 0,
+                    "outcome": "unknown",
+                },
             ) as span:
                 # Input guardrail
                 try:
@@ -137,6 +139,8 @@ class ApplicationService:
 
                 duration_ms = round((time.perf_counter() - start_time) * 1000, 1)
                 span.set_attribute("request_latency_ms", duration_ms)
+                span.set_attribute("duration_ms", duration_ms)
+                span.set_attribute("outcome", "success")
                 logger.info(
                     "Request completed successfully",
                     extra={
@@ -164,7 +168,15 @@ class ApplicationService:
             )
             return e.public_message
 
-        except Exception:
+        except Exception as exc:
+            from opentelemetry import trace as otel_trace
+
+            current_span = otel_trace.get_current_span()
+            if current_span.get_span_context().is_valid:
+                current_span.set_attribute("outcome", "error")
+                current_span.set_attribute("error.type", type(exc).__name__)
+                current_span.record_exception(exc)
+                current_span.set_status(otel_trace.StatusCode.ERROR, str(exc))
             logger.exception(
                 "Failed to handle message",
                 extra={"extra_data": {"request_id": request_id}},

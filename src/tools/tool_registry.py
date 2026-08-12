@@ -14,6 +14,10 @@ logger = logging.getLogger(__name__)
 class ToolRegistry:
     """
     Auto-discovers and initializes all BaseTool subclasses.
+
+    Tool construction must not perform external service health checks. A tool
+    is a dependency that can be constructed; outbound service health belongs
+    to the tool.api_request span at execution time.
     """
 
     def __init__(self, config_manager: ConfigManager):

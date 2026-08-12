@@ -11,11 +11,14 @@ Changes from original:
 """
 
 import importlib.util
+import os
 import sys
 import types
 from unittest.mock import Mock, patch
 
 import pytest
+
+os.environ.setdefault("OTEL_TRACES_EXPORTER", "none")
 
 
 def _register_stub(module_name: str, *, package: bool = False) -> None:

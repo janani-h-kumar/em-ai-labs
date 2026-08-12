@@ -160,3 +160,10 @@ def test_weather_tool_missing_city(mock_config):
 
     with pytest.raises(ValueError):
         tool._run()
+
+@patch("src.tools.weather_tool.requests.head")
+def test_weather_client_init_fails_on_unauthorized_health_check(mock_head, mock_config):
+    mock_head.return_value.status_code = 401
+
+    with pytest.raises(WeatherAPIError, match="HTTP 401"):
+        WeatherClient(mock_config)

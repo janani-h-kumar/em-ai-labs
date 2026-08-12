@@ -25,6 +25,7 @@ class RuntimeTelemetry:
         latency_ms: Execution latency in milliseconds
         cache_hit: Whether result was from cache
         model: Model name used for execution
+        context_size_tokens: Estimated input/context size in tokens
     """
 
     input_tokens: int
@@ -33,6 +34,7 @@ class RuntimeTelemetry:
     latency_ms: float
     cache_hit: bool = False
     model: str = ""
+    context_size_tokens: int = 0
 
 
 class BaseRuntime(ABC):

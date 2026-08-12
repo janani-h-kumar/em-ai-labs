@@ -9,6 +9,7 @@ import time
 from typing import Any
 
 import requests
+from opentelemetry import trace as otel_trace
 from langchain.agents import AgentExecutor, create_tool_calling_agent
 from langchain_core.chat_history import InMemoryChatMessageHistory
 from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
@@ -21,6 +22,7 @@ from src.memory.conversation_memory import (
     InProcessMemory,
 )
 from src.middleware.retry import retry_with_backoff
+from src.observability.tracing import create_span
 from src.runtimes.base_runtime import BaseRuntime, RuntimeTelemetry
 from src.utils.config_loader import ConfigManager
 from src.utils.logging_utils import reset_correlation_id, set_correlation_id
@@ -162,64 +164,84 @@ class LangChainRuntime(BaseRuntime):
     # Invoke
     # -----------------------------------------------------------------------
     def invoke(self, message: str, session_id: str = "default-enterprise-session") -> str:
-        """
-        Executes an orchestration turn. Accepts an optional session_id parameter
-        to isolate multi-turn context between distinct users or workflows.
-        """
-        start_time = time.time()
+        """Execute one runtime request under an ``agent.run`` span."""
+        start_time = time.perf_counter()
         request_id = set_correlation_id()
+        model = self.config_manager.get("env.LLM_MODEL", default="llama3.1")
+        estimated_context_tokens = _count_tokens(message, model)
 
-        try:
-            logger.info(
-                "Processing stateful message",
-                extra={"extra_data": {"request_id": request_id, "session_id": session_id}},
-            )
-
-            if not self.agent_executor:
-                raise LangChainRuntimeExecutionError("Agent executor not initialised.")
-
-            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
-                # Execute against the stateful wrapper wrapper
-                future = executor.submit(
-                    self.agent_executor.invoke,
-                    {"input": message},
-                    config={
-                        "configurable": {"session_id": session_id}
-                    },  # Dictates the memory workspace
+        with create_span(
+            "agent.run",
+            **{
+                "agent.name": "langchain_runtime",
+                "agent.version": "1.0",
+                "execution.id": request_id,
+                "session.id": session_id,
+                "model": model,
+                "context_size_tokens": estimated_context_tokens,
+                "outcome": "unknown",
+            },
+        ) as span:
+            try:
+                logger.info(
+                    "Processing stateful message",
+                    extra={"extra_data": {"request_id": request_id, "session_id": session_id}},
                 )
-                try:
-                    result = future.result(timeout=self.INVOKE_TIMEOUT_SECONDS)
-                except concurrent.futures.TimeoutError as e:
-                    raise LangChainRuntimeExecutionError(
-                        "Agent timed out after %s seconds.", self.INVOKE_TIMEOUT_SECONDS
-                    ) from e
 
-            response = result.get("output", "No response generated.")
+                if not self.agent_executor:
+                    raise LangChainRuntimeExecutionError("Agent executor not initialised.")
 
-            # Telemetry processing
-            ollama_model = self.config_manager.get("env.LLM_MODEL", default="llama3.1")
-            input_tokens = _count_tokens(message)
-            output_tokens = _count_tokens(response)
+                with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+                    future = executor.submit(
+                        self.agent_executor.invoke,
+                        {"input": message},
+                        config={"configurable": {"session_id": session_id}},
+                    )
+                    try:
+                        result = future.result(timeout=self.INVOKE_TIMEOUT_SECONDS)
+                    except concurrent.futures.TimeoutError as exc:
+                        raise LangChainRuntimeExecutionError(
+                            f"Agent timed out after {self.INVOKE_TIMEOUT_SECONDS} seconds."
+                        ) from exc
 
-            self.telemetry = RuntimeTelemetry(
-                input_tokens=input_tokens,
-                output_tokens=output_tokens,
-                total_tokens=input_tokens + output_tokens,
-                latency_ms=(time.time() - start_time) * 1000,
-                model=ollama_model,
-            )
+                response = str(result.get("output", "No response generated."))
+                input_tokens = _count_tokens(message, model)
+                output_tokens = _count_tokens(response, model)
+                total_tokens = input_tokens + output_tokens
+                latency_ms = round((time.perf_counter() - start_time) * 1000, 1)
 
-            return str(response)
+                self.telemetry = RuntimeTelemetry(
+                    input_tokens=input_tokens,
+                    output_tokens=output_tokens,
+                    total_tokens=total_tokens,
+                    latency_ms=latency_ms,
+                    model=model,
+                    context_size_tokens=input_tokens,
+                )
 
-        except Exception as e:
-            # FIXED G004: Converted to lazy formatting
-            logger.error(
-                "Runtime execution failed: %s", e, extra={"extra_data": {"request_id": request_id}}
-            )
-            raise LangChainRuntimeExecutionError("Failed to execute: %s", e) from e
+                span.set_attribute("input_tokens", input_tokens)
+                span.set_attribute("output_tokens", output_tokens)
+                span.set_attribute("total_tokens", total_tokens)
+                span.set_attribute("context_size_tokens", input_tokens)
+                span.set_attribute("latency_ms", latency_ms)
+                span.set_attribute("outcome", "success")
+                return response
 
-        finally:
-            reset_correlation_id()  # ← clean slate for next request
+            except Exception as exc:
+                latency_ms = round((time.perf_counter() - start_time) * 1000, 1)
+                span.set_attribute("latency_ms", latency_ms)
+                span.set_attribute("outcome", "error")
+                span.set_attribute("error.type", type(exc).__name__)
+                span.record_exception(exc)
+                span.set_status(otel_trace.StatusCode.ERROR, str(exc))
+                logger.error(
+                    "Runtime execution failed: %s",
+                    exc,
+                    extra={"extra_data": {"request_id": request_id}},
+                )
+                raise LangChainRuntimeExecutionError(f"Failed to execute: {exc}") from exc
+            finally:
+                reset_correlation_id()
 
     def _get_session_history(
         self,

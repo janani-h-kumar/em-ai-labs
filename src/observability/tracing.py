@@ -1,162 +1,89 @@
-"""
-OpenTelemetry tracing setup for em-ai-labs.
+"""OpenTelemetry tracing setup for em-ai-labs.
 
-This module exposes a single tracer plus helper functions for trace ID
-and span ID propagation. It is intentionally safe to import even when
-OpenTelemetry exporters are not installed or configured.
+P0 observability is intentionally trace-only:
+
+    Agent framework -> OpenTelemetry SDK -> OTLP -> Jaeger
+
+There is no custom trace file exporter, dashboard, database, Prometheus, or
+Loki integration in the application. Local development uses Jaeger's OTLP
+receiver by default at http://localhost:4317.
 """
 
-import json
+from __future__ import annotations
+
 import logging
 import os
 import threading
-from collections.abc import Sequence
-from pathlib import Path
+from collections.abc import Mapping
 from typing import Any
 
 from dotenv import load_dotenv
 from opentelemetry import trace
 from opentelemetry.sdk.resources import Resource
 from opentelemetry.sdk.trace import TracerProvider
-from opentelemetry.sdk.trace.export import (
-    ReadableSpan,
-    SimpleSpanProcessor,
-    SpanExporter,
-    SpanExportResult,
-)
+from opentelemetry.sdk.trace.export import BatchSpanProcessor
+from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
 
 logger = logging.getLogger(__name__)
 
-_SERVICE_NAME = "em-ai-labs"
+SERVICE_NAME = "em-ai-labs"
+DEFAULT_OTLP_ENDPOINT = "http://localhost:4317"
+
 _request_count = 0
 _request_count_lock = threading.Lock()
+_provider_initialized = False
 
 
 def _load_trace_env() -> None:
-    """Load local env files before tracing decides whether to export."""
-    repo_root = Path(__file__).resolve().parents[2]
+    repo_root = __import__("pathlib").Path(__file__).resolve().parents[2]
     load_dotenv(repo_root / ".env", override=False)
     app_env = (os.getenv("APP_ENV") or "dev").lower()
     load_dotenv(repo_root / f".env.{app_env}", override=False)
 
 
-class JsonlSpanExporter(SpanExporter):
-    """Write completed spans to a local JSONL file for offline inspection."""
-
-    def __init__(self, file_path: str) -> None:
-        self.file_path = Path(file_path)
-        self.file_path.parent.mkdir(parents=True, exist_ok=True)
-        self._lock = threading.Lock()
-
-    def export(self, spans: Sequence[ReadableSpan]) -> SpanExportResult:
-        try:
-            with self._lock:
-                with self.file_path.open("a", encoding="utf-8") as trace_file:
-                    for span in spans:
-                        trace_file.write(json.dumps(_span_to_json(span), default=str))
-                        trace_file.write("\n")
-            return SpanExportResult.SUCCESS
-        except Exception:
-            logger.exception("Failed to export spans to %s", self.file_path)
-            return SpanExportResult.FAILURE
-
-    def shutdown(self) -> None:
-        return None
+def _build_resource(service_name: str) -> Resource:
+    return Resource.create(
+        {
+            "service.name": service_name,
+            "deployment.environment.name": os.getenv("ENV", "dev"),
+        }
+    )
 
 
-def _span_to_json(span: ReadableSpan) -> dict[str, Any]:
-    context = span.get_span_context()
-    parent = span.parent
-    trace_id = format(context.trace_id, "032x") if context is not None else None
-    span_id = format(context.span_id, "016x") if context is not None else None
-    return {
-        "name": span.name,
-        "trace_id": trace_id,
-        "span_id": span_id,
-        "parent_span_id": format(parent.span_id, "016x") if parent else None,
-        "start_time_unix_nano": span.start_time,
-        "end_time_unix_nano": span.end_time,
-        "duration_ms": _duration_ms(span),
-        "status": {
-            "status_code": span.status.status_code.name,
-            "description": span.status.description,
-        },
-        "attributes": dict(span.attributes or {}),
-        "events": [
-            {
-                "name": event.name,
-                "timestamp_unix_nano": event.timestamp,
-                "attributes": dict(event.attributes or {}),
-            }
-            for event in span.events
-        ],
-        "resource": dict(span.resource.attributes),
-    }
+def setup_tracing(service_name: str = SERVICE_NAME) -> trace.Tracer:
+    """Configure the process-wide OpenTelemetry provider.
 
-
-def _duration_ms(span: ReadableSpan) -> float | None:
-    if span.start_time is None or span.end_time is None:
-        return None
-    return round((span.end_time - span.start_time) / 1_000_000, 3)
-
-
-def setup_tracing(service_name: str = _SERVICE_NAME) -> trace.Tracer:
-    """Initialise and return a tracer.
-
-    OTEL_TRACES_EXPORTER controls export mode:
-    - file: write spans to OTEL_TRACE_FILE as JSONL
-    - otlp: export spans to OTEL_EXPORTER_OTLP_ENDPOINT
-    - none/unset: return the NoOp tracer
+    ``OTEL_TRACES_EXPORTER=none`` explicitly disables export for tests.
+    Otherwise OTLP/gRPC is used, defaulting to Jaeger at localhost:4317.
     """
-    _load_trace_env()
-    endpoint = os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT")
-    exporter_mode = os.getenv("OTEL_TRACES_EXPORTER") or ("otlp" if endpoint else "none")
-    exporter_mode = exporter_mode.strip().lower()
-    resource = Resource.create({"service.name": service_name})
+    global _provider_initialized
 
-    if exporter_mode in ("", "none", "noop", "false", "0"):
-        logger.info("OTEL_TRACES_EXPORTER not set - using NoOp tracer")
+    _load_trace_env()
+
+    if _provider_initialized:
         return trace.get_tracer(service_name)
 
-    try:
-        provider = TracerProvider(resource=resource)
-
-        if exporter_mode == "file":
-            trace_file = os.getenv("OTEL_TRACE_FILE", "logs/traces.jsonl")
-            provider.add_span_processor(SimpleSpanProcessor(JsonlSpanExporter(trace_file)))
-            trace.set_tracer_provider(provider)
-            logger.info("OpenTelemetry tracing enabled - exporting JSONL to %s", trace_file)
-            return trace.get_tracer(service_name)
-
-        if exporter_mode == "otlp":
-            if not endpoint:
-                logger.warning(
-                    "OTEL_TRACES_EXPORTER=otlp but OTEL_EXPORTER_OTLP_ENDPOINT is unset - using NoOp tracer"
-                )
-                return trace.get_tracer(service_name)
-
-            from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import (
-                OTLPSpanExporter,
+    exporter_mode = (os.getenv("OTEL_TRACES_EXPORTER") or "otlp").strip().lower()
+    if exporter_mode in {"none", "noop", "false", "0"} or exporter_mode not in {"otlp", "otlp/grpc", "grpc"}:
+        if exporter_mode not in {"none", "noop", "false", "0"}:
+            logger.warning(
+                "Unsupported OTEL_TRACES_EXPORTER=%s; trace export disabled",
+                exporter_mode,
             )
-            from opentelemetry.sdk.trace.export import BatchSpanProcessor
+        provider = TracerProvider(resource=_build_resource(service_name))
+        trace.set_tracer_provider(provider)
+        _provider_initialized = True
+        logger.info("OpenTelemetry tracing enabled without an exporter")
+        return trace.get_tracer(service_name)
 
-            exporter = OTLPSpanExporter(endpoint=endpoint, insecure=True)
-            provider.add_span_processor(BatchSpanProcessor(exporter))
-            trace.set_tracer_provider(provider)
-            logger.info("OpenTelemetry tracing enabled - exporting OTLP to %s", endpoint)
-            return trace.get_tracer(service_name)
+    endpoint = os.getenv("OTEL_EXPORTER_OTLP_ENDPOINT", DEFAULT_OTLP_ENDPOINT)
+    provider = TracerProvider(resource=_build_resource(service_name))
+    exporter = OTLPSpanExporter(endpoint=endpoint, insecure=True)
+    provider.add_span_processor(BatchSpanProcessor(exporter))
+    trace.set_tracer_provider(provider)
+    _provider_initialized = True
 
-        logger.warning("Unsupported OTEL_TRACES_EXPORTER=%s - using NoOp tracer", exporter_mode)
-    except ImportError:
-        logger.warning(
-            "OTEL_TRACES_EXPORTER=otlp but the OTLP exporter is not installed - falling back to NoOp tracer"
-        )
-    except Exception:
-        logger.exception(
-            "Failed to initialise OTel exporter mode=%s - falling back to NoOp tracer",
-            exporter_mode,
-        )
-
+    logger.info("OpenTelemetry tracing enabled; OTLP endpoint=%s", endpoint)
     return trace.get_tracer(service_name)
 
 
@@ -164,35 +91,45 @@ tracer = setup_tracing()
 
 
 class SpanContextManager:
-    def __init__(self, name: str, attributes: dict[str, Any]) -> None:
+    """Context manager that creates a current OpenTelemetry span."""
+
+    def __init__(self, name: str, attributes: Mapping[str, Any]) -> None:
         self._manager = tracer.start_as_current_span(name)
         self._attributes = attributes
 
     def __enter__(self):
         span = self._manager.__enter__()
-        for key, value in self._attributes.items():
-            try:
-                span.set_attribute(key, value)
-            except Exception:
-                logger.exception("Failed to set trace attribute %s=%s", key, value)
+        _set_attributes(span, self._attributes)
         return span
 
     def __exit__(self, exc_type, exc_val, exc_tb):
+        if exc_val is not None:
+            span = trace.get_current_span()
+            if span.get_span_context().is_valid:
+                span.set_attribute("outcome", "error")
+                span.set_attribute("error.type", type(exc_val).__name__)
         return self._manager.__exit__(exc_type, exc_val, exc_tb)
 
 
-class StartedSpan:
-    """Explicitly-started span object for manual lifecycle control."""
+def _set_attributes(span: Any, attributes: Mapping[str, Any]) -> None:
+    for key, value in attributes.items():
+        if value is None:
+            continue
+        try:
+            span.set_attribute(key, value)
+        except (TypeError, ValueError):
+            logger.debug("Unable to set OTel attribute %s=%r", key, value, exc_info=True)
 
-    def __init__(self, name: str, attributes: dict[str, Any]) -> None:
+
+
+class StartedSpan:
+    """Explicitly-started span with an active context."""
+
+    def __init__(self, name: str, attributes: Mapping[str, Any]) -> None:
         self._span = tracer.start_span(name)
         self._scope = trace.use_span(self._span, end_on_exit=False)
         self._scope.__enter__()
-        for key, value in attributes.items():
-            try:
-                self._span.set_attribute(key, value)
-            except Exception:
-                logger.exception("Failed to set trace attribute %s=%s", key, value)
+        _set_attributes(self._span, attributes)
 
     @property
     def span(self):
@@ -206,30 +143,40 @@ class StartedSpan:
 
 
 def start_span(name: str, **attributes: Any) -> StartedSpan:
-    """Start a span and make it the current active span."""
     return StartedSpan(name, attributes)
 
 
 def end_span(span: StartedSpan | Any) -> None:
-    """End a previously-started span."""
     if isinstance(span, StartedSpan):
         span.end()
-        return
-
-    if span is not None and hasattr(span, "end"):
-        try:
-            span.end()
-        except Exception:
-            logger.exception("Failed to end span %s", span)
+    elif span is not None and hasattr(span, "end"):
+        span.end()
 
 
-def create_span(name: str, **attributes: Any):
-    """Create a span context manager with attributes set."""
+def create_span(name: str, **attributes: Any) -> SpanContextManager:
+    """Create a current span and attach non-None attributes."""
     return SpanContextManager(name, attributes)
 
 
+def set_span_attributes(**attributes: Any) -> None:
+    """Set attributes on the currently active span."""
+    span = trace.get_current_span()
+    if span.get_span_context().is_valid:
+        _set_attributes(span, attributes)
+
+
+def mark_span_error(error: BaseException, **attributes: Any) -> None:
+    """Mark the current span as failed without swallowing the exception."""
+    span = trace.get_current_span()
+    if not span.get_span_context().is_valid:
+        return
+    _set_attributes(span, attributes)
+    span.record_exception(error)
+    span.set_status(trace.StatusCode.ERROR, str(error))
+    span.set_attribute("outcome", "error")
+
+
 def increment_request_count() -> int:
-    """Increment and return the total request count."""
     global _request_count
     with _request_count_lock:
         _request_count += 1
@@ -237,22 +184,21 @@ def increment_request_count() -> int:
 
 
 def get_request_count() -> int:
-    """Return the current request count."""
     with _request_count_lock:
         return _request_count
 
 
 def get_trace_id() -> str | None:
-    """Return the active trace ID as a hex string, or None."""
     span = trace.get_current_span()
-    if not span or span.get_span_context().trace_id == 0:
+    context = span.get_span_context()
+    if not context.is_valid:
         return None
-    return format(span.get_span_context().trace_id, "032x")
+    return format(context.trace_id, "032x")
 
 
 def get_span_id() -> str | None:
-    """Return the active span ID as a hex string, or None."""
     span = trace.get_current_span()
-    if not span or not span.get_span_context().is_valid:
+    context = span.get_span_context()
+    if not context.is_valid:
         return None
-    return format(span.get_span_context().span_id, "016x")
+    return format(context.span_id, "016x")

@@ -253,14 +253,13 @@ class OllamaClient(BaseLLMProvider):
             )
 
         with create_span(
-            "llm.chat_completion",
-            llm_provider="ollama",
-            model_name=str(self.model),
+            "llm.call",
+            provider="ollama",
             model=str(self.model),
-            decision="llm.chat_completion",
             message_count=len(normalised_messages),
             max_tokens=max_tokens or 0,
             has_system_prompt=system_prompt is not None,
+            outcome="unknown",
         ) as span:
             start_time = time.perf_counter()
             try:
@@ -290,14 +289,14 @@ class OllamaClient(BaseLLMProvider):
                 response_size_bytes = len(result.encode("utf-8"))
 
                 span.set_attribute("latency_ms", duration_ms)
-                span.set_attribute("llm_latency_ms", duration_ms)
+                span.set_attribute("input_tokens", prompt_tokens)
+                span.set_attribute("output_tokens", completion_tokens)
+                span.set_attribute("total_tokens", total_tokens)
                 span.set_attribute("prompt_tokens", prompt_tokens)
                 span.set_attribute("completion_tokens", completion_tokens)
-                span.set_attribute("total_tokens", total_tokens)
-                span.set_attribute("tokens.prompt", prompt_tokens)
-                span.set_attribute("tokens.completion", completion_tokens)
-                span.set_attribute("tokens.total", total_tokens)
+                span.set_attribute("context_size_tokens", prompt_tokens)
                 span.set_attribute("response_size_bytes", response_size_bytes)
+                span.set_attribute("outcome", "success")
 
                 logger.info(
                     "Successfully received response from model",
@@ -317,7 +316,9 @@ class OllamaClient(BaseLLMProvider):
                 raise
             except Exception as e:
                 duration_ms = round((time.perf_counter() - start_time) * 1000, 1)
-                span.set_attribute("llm_latency_ms", duration_ms)
+                span.set_attribute("latency_ms", duration_ms)
+                span.set_attribute("outcome", "error")
+                span.set_attribute("error.type", type(e).__name__)
                 span.set_status(otel_trace.StatusCode.ERROR, str(e))
                 span.record_exception(e)
                 raise OllamaError(f"Error calling model '{self.model}': {e}") from e

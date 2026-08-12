@@ -79,15 +79,23 @@ class Executor:
                 agent = self.agent_registry.create_instance(agent_name)
 
                 with create_span(
-                    "agent.handle",
-                    agent_name=resolved_agent_name,
-                    task_id=task.id,
-                    session_id=context.session_id,
+                    "agent.run",
+                    **{
+                        "agent.name": resolved_agent_name,
+                        "agent.version": getattr(agent, "version", "1.0"),
+                        "execution.id": context.session_id,
+                        "session.id": context.session_id,
+                        "iteration": context.metadata.get("react", {}).get("current_iteration", 0),
+                        "task.id": task.id,
+                        "outcome": "unknown",
+                    },
                 ) as agent_span:
                     result = await agent.handle(task, context)
                     agent_latency_ms = round((time.perf_counter() - start_time) * 1000, 1)
-                    agent_span.set_attribute("agent_latency_ms", agent_latency_ms)
+                    agent_span.set_attribute("duration_ms", agent_latency_ms)
+                    agent_span.set_attribute("outcome", "success")
 
+                span.set_attribute("outcome", "success")
                 task.status = TaskStatus.COMPLETED
                 task.result = result
                 context.completed_tasks[task.id] = result
@@ -113,6 +121,7 @@ class Executor:
                 duration_ms = round((time.perf_counter() - start_time) * 1000, 1)
                 span.set_attribute("duration_ms", duration_ms)
                 span.set_attribute("task.status", "failed")
+                span.set_attribute("outcome", "error")
                 span.record_exception(e)
                 span.set_status(otel_trace.StatusCode.ERROR, str(e))
 
